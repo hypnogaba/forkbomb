@@ -1,0 +1,12 @@
+{
+  "id": "forkbomb",
+  "name": "FORK BOMB",
+  "version": "0.1.0",
+  "author": "@hypnogaba",
+  "summary": "Bomb-maze arcade: blow up forks, dodge rugs, jeets and MEV sandwiches, reach the Finality gate. 8 stages, 4 worlds.",
+  "icon": "star",
+  "accent": "9945FF",
+  "category": "games",
+  "permissions": ["led"],
+  "hosts": []
+}
