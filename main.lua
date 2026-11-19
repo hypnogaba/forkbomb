@@ -76,11 +76,18 @@ end
 
 -- ------------------------------------------------------------------ LEDs
 local has_led = led ~= nil
+local led_now = {}
 local led_flash = 0
 local led_flash_col = 0
 
 local function leds_off()
   if has_led then led.off() end
+  led_now = {}
+end
+
+-- only touch an LED when its colour changes
+local function led_put(n, col)
+  if led_now[n] ~= col then led_now[n] = col led.hex(n, col) end
 end
 
 local function flash(col, t)
@@ -88,10 +95,15 @@ local function flash(col, t)
 end
 
 -- ------------------------------------------------------------------ save
+local function int_or(v, lo, hi, def)
+  if type(v) ~= "number" or v ~= v or v < lo or v > hi then return def end
+  return floor(v)
+end
+
 local save = {
-  best = storage.get("best") or 0,
-  stage = storage.get("stage") or 1,
-  epoch = storage.get("epoch") or 1,
+  best = int_or(storage.get("best"), 0, 2000000000, 0),
+  stage = int_or(storage.get("stage"), 1, 8, 1),
+  epoch = int_or(storage.get("epoch"), 1, 999, 1),
 }
 
 local function persist()
@@ -106,6 +118,12 @@ local run = nil        -- {stage, epoch, score, lives, bombs, fire, speed}
 local G = nil          -- the current stage
 
 local function idx(c, r) return r * COLS + c end
+
+-- "1-2", or "2:1-2" from the second epoch on
+local function stage_name(stage, epoch)
+  local st = STAGES[stage]
+  return (epoch > 1 and (epoch .. ":") or "") .. st.w .. "-" .. ((stage - 1) % 2 + 1)
+end
 
 -- grid codes
 local FLOOR, WALL, BLOCK, BAR = 0, 1, 2, 3
@@ -174,6 +192,13 @@ local function build_map(st)
       end
     end
   end
+  -- the gate and the power-up need two blocks: force them if the dice said no
+  local r = ROWS - 2
+  for c = COLS - 2, 1, -1 do
+    if #blocks >= 2 then break end
+    local i = idx(c, r)
+    if g[i] == FLOOR then g[i] = BLOCK blocks[#blocks + 1] = i end
+  end
   return g, deco, blocks
 end
 
@@ -223,31 +248,22 @@ local function tile_sig(i)
   end
   if t == BLOCK and G.breaking[i] then
     -- falling pieces over the floor
-    return "floor+" .. base
+    return "floor", base
   end
-  return base .. "+" .. over
+  return base, over
 end
 
 local function draw_tile(i)
-  local sig = tile_sig(i)
-  if G.drawn[i] == sig then return end
-  G.drawn[i] = sig
-  local c, r = i % COLS, i // COLS
-  local x, y = c * T, r * T
-  local t = G.grid[i]
-  if t == WALL then
-    canvas:image(IMG.wall, x, y)
-  elseif t == BAR then
-    canvas:image(IMG.floor, x, y)
-    canvas:image(IMG[G.deco[i]], x, y)
-  elseif t == BLOCK and not G.breaking[i] then
-    canvas:image(IMG.block, x, y)
-  else
-    canvas:image(IMG.floor, x, y)
-    local plus = sig:find("+", 1, true)
-    local over = sig:sub(plus + 1)
-    if over ~= "" then canvas:image(IMG[over], x, y) end
+  local base, over = tile_sig(i)
+  local d = G.drawn[i]
+  if d and d[1] == base and d[2] == over then return end
+  if d then d[1], d[2] = base, over else G.drawn[i] = {base, over} end
+  local x, y = (i % COLS) * T, (i // COLS) * T
+  if base ~= "floor" and base ~= "wall" and base ~= "block" then
+    canvas:image(IMG.floor, x, y)   -- bars have see-through corners
   end
+  canvas:image(IMG[base], x, y)
+  if over ~= "" then canvas:image(IMG[over], x, y) end
 end
 
 local function touch(i) G.touched[i] = true end
@@ -291,7 +307,7 @@ local function hud_set(key, text, color)
 end
 
 local function hud_update()
-  hud_set("stage", (run.epoch > 1 and (run.epoch .. ":") or "") .. ((G.st.w)) .. "-" .. ((run.stage - 1) % 2 + 1))
+  hud_set("stage", stage_name(run.stage, run.epoch))
   hud_set("score", tostring(run.score))
   local t = max(0, floor(G.time))
   hud_set("time", tostring(t), t <= 30 and "orange" or "text")
@@ -610,7 +626,7 @@ end
 -- ------------------------------------------------------------------ bombs and flames
 local function place_bomb()
   local p = G.player
-  if not p.alive or G.cleared then return end
+  if not p.alive or G.cleared or G.intro > 0 then return end
   if G.nbombs >= run.bombs then return end
   local c, r = ent_tile(p)
   local i = idx(c, r)
@@ -627,7 +643,7 @@ local function add_flame(i, kind)
     local a, b = horiz[f.kind] or false, horiz[kind] or false
     if f.kind == "c" or kind == "c" or a ~= b then kind = "c" end
   end
-  G.flames[i] = {t = FLAME_T, kind = kind, blast = G.blast}
+  G.flames[i] = {t = FLAME_T, kind = kind, blast = f and f.blast or G.blast}
 end
 
 local function explode(i)
@@ -814,7 +830,7 @@ function start_stage()
   overlay[#overlay + 1] = band
   overlay[#overlay + 1] = ui.gradient(0, 70, ui.W, 3)
   overlay[#overlay + 1] = ui.gradient(0, 141, ui.W, 3)
-  local label = (run.epoch > 1 and ("EPOCH " .. run.epoch .. "  ") or "") .. "STAGE " .. st.w .. "-" .. ((run.stage - 1) % 2 + 1)
+  local label = (run.epoch > 1 and ("EPOCH " .. run.epoch .. "  ") or "") .. "STAGE " .. stage_name(run.stage, 1)
   center_label(80, label, 32, "text")
   center_label(118, W.name .. "  -  find the Finality gate", 14, W.L)
   save.stage, save.epoch = run.stage, run.epoch
@@ -864,7 +880,7 @@ local function update_leds(dt)
   if not has_led then return end
   if led_flash > 0 then
     led_flash = led_flash - dt
-    for n = 1, 6 do led.hex(n, led_flash_col) end
+    for n = 1, 6 do led_put(n, led_flash_col) end
   else
     -- top LEDs: the fuse of the bomb closest to going off
     local tmin = nil
@@ -873,13 +889,13 @@ local function update_leds(dt)
     end
     local lit = tmin and math.ceil(tmin / FUSE * 6) or 0
     for n = 1, 6 do
-      if n <= lit then led.hex(n, tmin < 0.8 and 0xFF3020 or 0xFF8A3D)
-      elseif G.open then led.hex(n, (floor(G.clock * 6) % 6 + 1 == n) and 0x14F195 or 0)
-      else led.hex(n, 0) end
+      if n <= lit then led_put(n, tmin < 0.8 and 0xFF3020 or 0xFF8A3D)
+      elseif G.open then led_put(n, (floor(G.clock * 6) % 6 + 1 == n) and 0x14F195 or 0)
+      else led_put(n, 0) end
     end
   end
-  led.hex(7, run.lives >= 1 and 0x14F195 or 0x300000)
-  led.hex(8, run.lives >= 2 and 0x14F195 or 0x300000)
+  led_put(7, run.lives >= 1 and 0x14F195 or 0x300000)
+  led_put(8, run.lives >= 2 and 0x14F195 or 0x300000)
 end
 
 local function play_tick(dt)
@@ -891,10 +907,10 @@ local function play_tick(dt)
     return
   end
   if G.cleared then
-    if G.clear_t == 0 then stage_cleared() end
+    if not G.clear_shown then G.clear_shown = true stage_cleared() end
     G.clear_t = G.clear_t + dt
     for n = 1, 8 do
-      if has_led then led.hex(n, (floor(G.clock * 12) % 8 + 1 == n) and 0x14F195 or 0x002010) end
+      if has_led then led_put(n, (floor(G.clock * 12) % 8 + 1 == n) and 0x14F195 or 0x002010) end
     end
     if G.clear_t > 2.6 then next_stage() end
     return
@@ -994,8 +1010,7 @@ function show_title()
   menu = {}
   local items = {{id = "new", text = "NEW GAME"}}
   if save.stage > 1 or save.epoch > 1 then
-    local st = STAGES[save.stage]
-    items[#items + 1] = {id = "cont", text = "CONTINUE " .. (save.epoch > 1 and (save.epoch .. ":") or "") .. st.w .. "-" .. ((save.stage - 1) % 2 + 1)}
+    items[#items + 1] = {id = "cont", text = "CONTINUE " .. stage_name(save.stage, save.epoch)}
   end
   items[#items + 1] = {id = "help", text = "HOW TO PLAY"}
   for n, it in ipairs(items) do
@@ -1017,9 +1032,9 @@ local function title_tick(dt)
   if has_led then
     for n = 1, 6 do
       local ph = (floor(t * 8) + n) % 6
-      led.hex(n, ph < 2 and 0x9945FF or ph < 4 and 0x3FD8E8 or 0x14F195)
+      led_put(n, ph < 2 and 0x9945FF or ph < 4 and 0x3FD8E8 or 0x14F195)
     end
-    led.hex(7, 0) led.hex(8, 0)
+    led_put(7, 0) led_put(8, 0)
   end
 end
 
@@ -1084,13 +1099,13 @@ end
 function show_over()
   scene = "over"
   end_card("REKT", "pink", "score " .. run.score, "the chain moves on without you")
-  if has_led then led.fill(80, 0, 10) end
+  if has_led then for n = 1, 8 do led_put(n, 0x500A0A) end end
 end
 
 function show_win()
   scene = "win"
   end_card("FINALITY!", "green", "score " .. run.score, "epoch " .. run.epoch .. " begins: foes are faster")
-  if has_led then led.fill(0x14, 0xF1, 0x95) end
+  if has_led then for n = 1, 8 do led_put(n, 0x14F195) end end
 end
 
 -- ------------------------------------------------------------------ host callbacks
