@@ -64,7 +64,8 @@ python3 -m venv .venv && .venv/bin/pip install lupa pillow
 `sim.py` runs Lua 5.4 (the badge runs 5.5; the code avoids the differences). It prints the most
 VM instructions any callback used (the badge allows 200 000) and fails on any Lua error.
 
-On the real firmware: open https://solana.com/breakpoint/badge/emulator, open the Console and
+On the real firmware: open https://solana.com/breakpoint/badge/emulator, open the Console, send
+`open home` first (the badge refuses `lua put` while the app runs, and the old file stays), then
 send `lua put forkbomb <file> begin`, base64 lines of up to 128 chars, `lua put forkbomb <file> end`
 for `app.json`, `art.lua` and `main.lua`, then `lua run forkbomb`. `key select` / `key up` drive it
 (taps only, no hold). `lua mem` shows heap and errors.
