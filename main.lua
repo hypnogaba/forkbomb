@@ -18,15 +18,16 @@ local floor, abs, min, max = math.floor, math.abs, math.min, math.max
 local random = math.random
 
 -- ------------------------------------------------------------------ stages
+-- pattern: the picture the fork blocks make in the middle of the map
 local STAGES = {
-  {w = 1, layout = "classic", density = 0.30, foes = {"rug", "rug", "rug"}, pu = "fire"},
-  {w = 1, layout = "logo",    density = 0.34, foes = {"rug", "rug", "jeet", "jeet"}, pu = "bomb"},
-  {w = 2, layout = "open",    density = 0.40, foes = {"jeet", "jeet", "sand", "rug", "rug"}, pu = "speed"},
-  {w = 2, layout = "logo",    density = 0.40, foes = {"jeet", "jeet", "jeet", "sand", "sand"}, pu = "fire"},
-  {w = 3, layout = "classic", density = 0.42, foes = {"sand", "sand", "fud", "jeet", "rug"}, pu = "bomb"},
-  {w = 3, layout = "logo",    density = 0.42, foes = {"sand", "sand", "sand", "fud", "fud"}, pu = "shield"},
-  {w = 4, layout = "open",    density = 0.46, foes = {"rug", "jeet", "jeet", "sand", "sand", "fud"}, pu = "fire"},
-  {w = 4, layout = "logo",    density = 0.45, foes = {"jeet", "jeet", "sand", "sand", "sand", "fud", "fud", "fud"}, pu = "speed"},
+  {w = 1, layout = "classic", pattern = "solana", density = 0.22, foes = {"rug", "rug", "rug"}, pu = "fire"},
+  {w = 1, layout = "classic", pattern = "dz",     density = 0.26, foes = {"rug", "rug", "jeet", "jeet"}, pu = "bomb"},
+  {w = 2, layout = "open",    pattern = "GM",     density = 0.32, foes = {"jeet", "jeet", "sand", "rug", "rug"}, pu = "kick"},
+  {w = 2, layout = "classic", pattern = "SOL",    density = 0.32, foes = {"jeet", "jeet", "jeet", "sand", "sand"}, pu = "fire"},
+  {w = 3, layout = "classic", pattern = "LFG",    density = 0.36, foes = {"sand", "sand", "fud", "jeet", "rug"}, pu = "remote"},
+  {w = 3, layout = "open",    pattern = "TPS",    density = 0.36, foes = {"sand", "sand", "sand", "fud", "fud"}, pu = "pierce"},
+  {w = 4, layout = "open",    pattern = "BP",     density = 0.40, foes = {"rug", "jeet", "jeet", "sand", "sand", "fud"}, pu = "max"},
+  {w = 4, layout = "classic", pattern = "solana", density = 0.40, foes = {"jeet", "jeet", "sand", "sand", "sand", "fud", "fud", "fud"}, pu = "speed"},
 }
 
 local FOES = {
@@ -41,7 +42,33 @@ local PU_TEXT = {
   fire = "+1 RANGE",
   speed = "IBRL! SPEED UP",
   shield = "SHIELD 10s",
+  max = "MAX TPS: FULL FIRE",
+  pierce = "FIREDANCER: FIRE GOES THROUGH FORKS",
+  kick = "KICK: WALK INTO A BOMB TO SEND IT",
+  remote = "REMOTE: HOLD SELECT TO DETONATE",
+  pass = "ZK PASS: WALK THROUGH FORKS",
+  life = "AIRDROP! +1 LIFE",
+  time = "+30 SLOTS",
 }
+
+-- What a broken fork can hide: {item, weight, first stage it can show up}
+local ITEMS = {
+  {"bomb", 22, 1}, {"fire", 22, 1}, {"speed", 9, 1}, {"shield", 5, 1}, {"time", 6, 1},
+  {"kick", 7, 1}, {"life", 2, 2}, {"pierce", 5, 2}, {"remote", 4, 3}, {"max", 3, 3},
+  {"pass", 4, 3}, {"curse", 6, 3},
+}
+local ITEM_CHANCE, LOGO_ITEM_CHANCE = 0.18, 0.30
+
+-- 3 x 5 letters for the word stages
+local FONT = {
+  G = {"###", "#..", "#.#", "#.#", "###"}, M = {"#.#", "###", "###", "#.#", "#.#"},
+  S = {"###", "#..", "###", "..#", "###"}, O = {"###", "#.#", "#.#", "#.#", "###"},
+  L = {"#..", "#..", "#..", "#..", "###"}, F = {"###", "#..", "##.", "#..", "#.."},
+  T = {"###", ".#.", ".#.", ".#.", ".#."}, P = {"###", "#.#", "###", "#..", "#.."},
+  B = {"##.", "#.#", "##.", "#.#", "##."},
+}
+local ZERO = {".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."}
+local LETTER_COLS = {"g", "a", "p"}
 
 -- ------------------------------------------------------------------ images
 local IMG = {}
@@ -75,6 +102,16 @@ local function load_world(w)
 end
 
 -- ------------------------------------------------------------------ LEDs
+-- ------------------------------------------------------------------ settings
+local settings = {leds = true, name = true}
+do
+  local st = storage.get("settings")
+  if type(st) == "table" then
+    if st.leds == false then settings.leds = false end
+    if st.name == false then settings.name = false end
+  end
+end
+
 local has_led = led ~= nil
 local led_now = {}
 local led_flash = 0
@@ -87,6 +124,7 @@ end
 
 -- only touch an LED when its colour changes
 local function led_put(n, col)
+  if not settings.leds then col = 0 end
   if led_now[n] ~= col then led_now[n] = col led.hex(n, col) end
 end
 
@@ -165,6 +203,49 @@ local function award(key, amount, reason)
   end)
 end
 
+-- ------------------------------------------------------------------ leaderboard
+-- Scores go to our own server; the badge server signs each request, so the
+-- server knows which badge owner sent it (server/worker.js).
+local LB = "https://forkbomb-scores.hypnogaba.workers.dev"
+local LB_ERR = {
+  offline = "Offline: join Wi-Fi to see the board",
+  ["not linked"] = "Claim this badge in My Badge first",
+  denied = "The board opens once FORK BOMB is in the store",
+  busy = "Badge busy, try again", timeout = "No answer, try again",
+  ["too fast"] = "Too fast, wait a moment", unreachable = "Server unreachable",
+}
+
+local function lb_name()
+  if not settings.name then return "anon" end
+  return badge and badge.owner and badge.owner() or "anon"
+end
+
+local function submit_score(score, stage, epoch, cb)
+  if not http or score <= 0 then return end
+  http.post(LB .. "/score", {score = score, stage = stage, epoch = epoch, name = lb_name()}, function(ok, res)
+    if ok and res.status == 200 then
+      if cb then cb(true, res) end
+      return
+    end
+    -- no answer, or the server is struggling: keep the best unsent score for later.
+    -- A 4xx is final (the server refused this score), so it is not retried.
+    local retry = not ok or res.status >= 500 or res.status == 429
+    local p = storage.get("lb_pending")
+    if retry and (type(p) ~= "table" or (tonumber(p.score) or 0) < score) then
+      storage.set("lb_pending", {score = score, stage = stage, epoch = epoch})
+    end
+    if cb then cb(false, ok and ("server said " .. res.status) or res) end
+  end)
+end
+
+local function flush_pending()
+  local p = storage.get("lb_pending")
+  if http and type(p) == "table" and type(p.score) == "number" then
+    storage.remove("lb_pending")      -- stored again if this try fails too
+    submit_score(int_or(p.score, 1, 5000000, 0), int_or(p.stage, 1, 8, 1), int_or(p.epoch, 1, 999, 1))
+  end
+end
+
 -- ------------------------------------------------------------------ game state
 local scene = "title"
 local run = nil        -- {stage, epoch, score, lives, bombs, fire, speed}
@@ -216,30 +297,62 @@ local function build_map(st)
       g[idx(c, r)] = t
     end
   end
-  if st.layout == "logo" then
-    -- the three Solana bars in the middle of the map
-    for r = 3, 9 do
-      for c = 3, 11 do
+  -- the picture: fork blocks in the shape of a logo or a word, in an open middle
+  local logo = {}
+  local function clear_box(c0, r0, c1, r1)
+    for r = r0, r1 do
+      for c = c0, c1 do
         if g[idx(c, r)] == WALL then g[idx(c, r)] = FLOOR end
-      end
-    end
-    local bars = {{4, "1"}, {6, "2"}, {8, "3"}}
-    for _, b in ipairs(bars) do
-      local r, n = b[1], b[2]
-      for c = 4, 10 do
-        g[idx(c, r)] = BAR
-        local part = (c == 4) and "l" or (c == 10) and "r" or "c"
-        deco[idx(c, r)] = "bar" .. n .. part
+        logo[idx(c, r)] = false        -- inside the picture: no random blocks
       end
     end
   end
-  -- fork blocks
+  local function put(c, r, name)
+    g[idx(c, r)] = BLOCK
+    deco[idx(c, r)] = name
+    logo[idx(c, r)] = true
+  end
+  local pat = st.pattern
+  if pat == "solana" then
+    clear_box(2, 2, 12, 10)
+    for n, r in ipairs({3, 6, 9}) do
+      for c = 3, 11 do
+        put(c, r, "bar" .. n .. ((c == 3) and "l" or (c == 11) and "r" or "c"))
+      end
+    end
+  elseif pat == "dz" then
+    clear_box(1, 2, 13, 10)
+    for k, c0 in ipairs({2, 8}) do
+      for y, row in ipairs(ZERO) do
+        for x = 1, #row do
+          if row:sub(x, x) == "#" then put(c0 + x - 1, 2 + y, k == 1 and "lb_w" or "lb_p") end
+        end
+      end
+    end
+  elseif pat then
+    local wdt = #pat * 4 - 1
+    local c0 = 1 + (13 - wdt) // 2
+    clear_box(c0 - 1, 3, c0 + wdt, 9)
+    for k = 1, #pat do
+      local glyph = FONT[pat:sub(k, k)]
+      for y, row in ipairs(glyph) do
+        for x = 1, 3 do
+          if row:sub(x, x) == "#" then
+            put(c0 + (k - 1) * 4 + x - 1, 3 + y, "lb_" .. LETTER_COLS[(k - 1) % 3 + 1])
+          end
+        end
+      end
+    end
+  end
+  -- fork blocks around the picture
   local blocks = {}
   for r = 1, ROWS - 2 do
     for c = 1, COLS - 2 do
       local i = idx(c, r)
       local safe = (c + r) <= 3
-      if g[i] == FLOOR and not safe and random() < st.density then
+      if logo[i] then
+        blocks[#blocks + 1] = i
+      elseif g[i] == FLOOR and not safe and logo[i] == nil and random() < st.density then
         g[i] = BLOCK
         blocks[#blocks + 1] = i
       end
@@ -252,7 +365,7 @@ local function build_map(st)
     local i = idx(c, r)
     if g[i] == FLOOR then g[i] = BLOCK blocks[#blocks + 1] = i end
   end
-  return g, deco, blocks
+  return g, deco, blocks, logo
 end
 
 local function passable_tile(c, r, ghost)
@@ -275,7 +388,7 @@ local function tile_sig(i)
       local k = BREAK_T - b
       base = k < 0.15 and "break1" or k < 0.3 and "break2" or "break3"
     else
-      base = "block"
+      base = G.deco[i] or "block"
     end
   else base = "floor" end
   local over = ""
@@ -286,7 +399,8 @@ local function tile_sig(i)
     over = "fire_" .. f.kind .. s
   elseif G.bombs[i] then
     local b = G.bombs[i]
-    local ph = floor((FUSE - b.t) * (b.t < 0.8 and 10 or 5)) % 3
+    local ph = b.remote and not b.lit and floor(G.clock * 4) % 3
+      or floor((FUSE - b.t) * (b.t < 0.8 and 10 or 5)) % 3
     over = "bomb" .. (ph + 1)
   elseif t ~= BLOCK then
     local it = G.items[i]
@@ -342,12 +456,19 @@ local function hud_build(st)
   hud.score = ui.label(HX, 68, "0", {size = 14, color = "text"})
   local rows = {
     {"i_clock", "time"}, {"i_life", "lives"}, {"i_bomb", "bombs"},
-    {"i_fire", "fire"}, {"i_speed", "speed"}, {"i_shield", "shield"},
+    {"i_fire", "fire"}, {"i_speed", "speed"},
   }
   for n, row in ipairs(rows) do
     local y = 90 + (n - 1) * 20
     hud["ic_" .. row[2]] = ui.image(HX, y, IMG[row[1]], {scale = 2})
     hud[row[2]] = ui.label(HX + 22, y + 1, "", {size = 14, color = "text"})
+  end
+  -- a row of what the player has on: outage, shield, kick, remote, firedancer, zk pass
+  hud.slots = {}
+  for n = 1, 4 do
+    local im = ui.image(HX + (n - 1) * 18, 192, IMG.i_shield, {scale = 2})
+    im:show(false)
+    hud.slots[n] = im
   end
 end
 
@@ -368,14 +489,24 @@ local function hud_update()
   hud_set("bombs", "x" .. run.bombs)
   hud_set("fire", "x" .. run.fire)
   hud_set("speed", "x" .. run.speed)
-  local sh = G.player.shield
-  local on = sh > 0
-  if last_hud.sh_on ~= on then
-    last_hud.sh_on = on
-    hud.ic_shield:show(on)
-    hud.shield:show(on)
+  local p = G.player
+  local on = hud.on or {}
+  hud.on = on
+  for n = 1, 6 do on[n] = nil end
+  if p.curse then on[#on + 1] = "i_curse" end
+  if p.shield > 0 and (p.shield > 3 or floor(p.shield * 4) % 2 == 0) then on[#on + 1] = "i_shield" end
+  if run.kick then on[#on + 1] = "i_kick" end
+  if run.remote then on[#on + 1] = "i_remote" end
+  if run.pierce then on[#on + 1] = "i_pierce" end
+  if run.pass then on[#on + 1] = "i_pass" end
+  for n = 1, 4 do
+    local name = on[n] or ""
+    if last_hud["slot" .. n] ~= name then
+      last_hud["slot" .. n] = name
+      if on[n] then hud.slots[n]:set(IMG[name]) end
+      hud.slots[n]:show(on[n] ~= nil)
+    end
   end
-  if on then hud_set("shield", tostring(math.ceil(sh)) .. "s", "green") end
 end
 
 -- ------------------------------------------------------------------ score popups
@@ -553,7 +684,7 @@ local function make_player()
 end
 
 local function player_can(c, r)
-  if not passable_tile(c, r, false) then return false end
+  if not passable_tile(c, r, run.pass) then return false end
   local b = G.bombs[idx(c, r)]
   if b and not b.pass then return false end
   return true
@@ -627,6 +758,8 @@ local function kill_player(why)
   flash(0xFF2040, 0.6)
 end
 
+local kick, detonate_all         -- defined with the bombs below
+
 local function update_player(dt)
   local p = G.player
   if not p.alive then
@@ -649,15 +782,29 @@ local function update_player(dt)
       if keys[name] then k = name break end
     end
   end
+  if p.curse then
+    p.curse_t = p.curse_t - dt
+    if p.curse_t <= 0 then p.curse = nil end
+  end
+  if keys.select and run.remote then
+    p.hold = (p.hold or 0) + dt
+    if p.hold >= 0.5 and not p.fired then p.fired = true detonate_all() end
+  else
+    p.hold, p.fired = 0, false
+  end
   local moving = false
   if k then
+    if p.curse == "reverse" then
+      k = ({left = "right", right = "left", up = "down", down = "up"})[k]
+    end
     local d = KEYDIR[k]
-    local speed = 46 + run.speed * 12
+    local speed = (46 + run.speed * 12) * (p.curse == "slow" and 0.5 or 1)
     local ox, oy = p.x, p.y
     move_axis(p, d[1], d[2], speed * dt)
     p.dir = d[3]
     moving = (p.x ~= ox or p.y ~= oy)
-    if moving then p.walk = p.walk + abs(p.x - ox) + abs(p.y - oy) end
+    if moving then p.walk = p.walk + abs(p.x - ox) + abs(p.y - oy)
+    elseif run.kick then kick(d[1], d[2]) end
   end
   local fr = 0
   if moving then
@@ -677,16 +824,57 @@ local function update_player(dt)
 end
 
 -- ------------------------------------------------------------------ bombs and flames
+-- REMOTE: hold SELECT to set off every waiting bomb (not the one under you);
+-- with no bomb left to place, a tap sets off the oldest one
+function detonate_all()
+  local pc, pr = ent_tile(G.player)
+  local mine = idx(pc, pr)
+  for i, b in pairs(G.bombs) do
+    if b.remote and not b.lit and i ~= mine then b.lit = true b.t = 0 end
+  end
+end
+
+local function detonate_oldest()
+  local best
+  for _, b in pairs(G.bombs) do
+    if b.remote and not b.lit and (not best or b.order < best.order) then best = b end
+  end
+  if best then best.lit = true best.t = 0 end
+end
+
 local function place_bomb()
   local p = G.player
   if not p.alive or G.cleared or G.intro > 0 then return end
-  if G.nbombs >= run.bombs then return end
+  if p.curse == "nobomb" then return end
   local c, r = ent_tile(p)
   local i = idx(c, r)
-  if G.bombs[i] or G.grid[i] ~= FLOOR then return end
-  G.bombs[i] = {t = FUSE, range = run.fire, pass = true}
+  if G.nbombs >= run.bombs or G.bombs[i] or G.grid[i] ~= FLOOR then
+    if run.remote then detonate_oldest() end
+    return
+  end
+  G.order = G.order + 1
+  G.bombs[i] = {t = FUSE, range = run.fire, pass = true, remote = run.remote,
+    pierce = run.pierce, order = G.order}
   G.nbombs = G.nbombs + 1
   touch(i)
+end
+
+local function foe_at(c, r)
+  for _, e in ipairs(G.foes) do
+    if e.alive then
+      local ec, er = ent_tile(e)
+      if ec == c and er == r then return true end
+    end
+  end
+  return false
+end
+
+-- KICK: send the bomb in front of the player sliding
+function kick(dx, dy)
+  local p = G.player
+  local c, r = ent_tile(p)
+  local b = G.bombs[idx(c + dx, r + dy)]
+  if b and not b.slide then b.slide = {dx, dy} b.st = 0 b.pass = false end
 end
 
 local function add_flame(i, kind)
@@ -719,30 +907,57 @@ local function explode(i)
       if t == WALL or t == BAR or t == nil then break end
       if t == BLOCK then
         if not G.breaking[j] then G.breaking[j] = BREAK_T end
-        break
-      end
-      if G.bombs[j] then
+        if not b.pierce then break end
+        -- FIREDANCER: the flame keeps going, and burns whoever hides in the fork
+        add_flame(j, "c")
+      elseif G.bombs[j] then
         G.bombs[j].t = min(G.bombs[j].t, 0.06)
+        G.bombs[j].lit = true
         break
+      else
+        local it = G.items[j]
+        if it and it ~= "gate" and not G.fresh[j] then
+          G.items[j] = nil
+          touch(j)
+        elseif it == "gate" and G.gate_cool <= 0 then
+          G.gate_cool = 3
+          G.spawn_at_gate = 2
+        end
+        local pair = d[1] ~= 0 and ends[d[1]] or vends[d[2]]
+        add_flame(j, n == b.range and pair[2] or pair[1])
       end
-      local it = G.items[j]
-      if it and it ~= "gate" and not G.fresh[j] then
-        G.items[j] = nil
-        touch(j)
-      elseif it == "gate" and G.gate_cool <= 0 then
-        G.gate_cool = 3
-        G.spawn_at_gate = 2
-      end
-      local pair = d[1] ~= 0 and ends[d[1]] or vends[d[2]]
-      add_flame(j, n == b.range and pair[2] or pair[1])
     end
   end
 end
 
 local function update_bombs(dt)
+  -- kicked bombs slide a tile every 70 ms until something is in the way
+  local sliding = {}
+  for i, b in pairs(G.bombs) do
+    if b.slide then sliding[#sliding + 1] = i end
+  end
+  for _, start in ipairs(sliding) do
+    local i = start
+    local b = G.bombs[i]
+    b.st = b.st + dt
+    while b.slide and b.st >= 0.07 do
+      b.st = b.st - 0.07
+      local c, r = i % COLS + b.slide[1], i // COLS + b.slide[2]
+      local j = idx(c, r)
+      local pc, pr = ent_tile(G.player)
+      if passable_tile(c, r, false) and not G.bombs[j] and not foe_at(c, r)
+        and not (pc == c and pr == r) and not G.items[j] then
+        G.bombs[j], G.bombs[i] = b, nil
+        touch(i) touch(j)
+        i = j
+      else
+        b.slide = nil
+      end
+    end
+  end
   local due = {}
   for i, b in pairs(G.bombs) do
-    b.t = b.t - dt
+    if not b.remote or b.lit then b.t = b.t - dt end
     if b.t <= 0 then due[#due + 1] = i end
   end
   for _, i in ipairs(due) do explode(i) end
@@ -800,12 +1015,27 @@ local function check_hits()
     if it and it ~= "gate" and G.grid[i] == FLOOR then
       G.items[i] = nil
       touch(i)
+      local text = PU_TEXT[it]
       if it == "bomb" then run.bombs = min(8, run.bombs + 1)
       elseif it == "fire" then run.fire = min(8, run.fire + 1)
       elseif it == "speed" then run.speed = min(3, run.speed + 1)
-      elseif it == "shield" then p.shield = 10 end
-      ui.toast(PU_TEXT[it])
-      flash(0x14F195, 0.3)
+      elseif it == "shield" then p.shield = 10
+      elseif it == "max" then run.fire = 8
+      elseif it == "pierce" then run.pierce = true
+      elseif it == "kick" then run.kick = true
+      elseif it == "remote" then run.remote = true
+      elseif it == "pass" then run.pass = true
+      elseif it == "life" then run.lives = min(9, run.lives + 1)
+      elseif it == "time" then G.time = G.time + 30
+      elseif it == "curse" then
+        local kinds = {"slow", "nobomb", "reverse"}
+        p.curse = kinds[random(#kinds)]
+        p.curse_t = 8
+        text = ({slow = "OUTAGE! SLOW MODE 8s", nobomb = "OUTAGE! NO BOMBS 8s",
+          reverse = "OUTAGE! CONTROLS FLIPPED 8s"})[p.curse]
+      end
+      ui.toast(text)
+      flash(it == "curse" and 0xFF2040 or 0x14F195, 0.3)
       run.score = run.score + 50
     elseif it == "gate" and G.open and G.grid[i] == FLOOR then
       local cx, cy = p.x + 8, p.y + 8
@@ -818,7 +1048,7 @@ local function check_hits()
 end
 
 -- ------------------------------------------------------------------ stage lifecycle
-local start_stage, show_title, show_help, show_over, show_win
+local start_stage, show_title, show_help, show_over, show_win, show_lb, show_settings
 
 local function free_stage()
   clear_popups()
@@ -854,21 +1084,30 @@ function start_stage()
     st = st, bombs = {}, flames = {}, breaking = {}, items = {}, fresh = {},
     drawn = {}, touched = {}, foes = {}, nbombs = 0, blast = 0, blast_kills = {},
     clock = 0, time = STAGE_TIME, open = false, cleared = false, gate_cool = 0,
-    spawn_at_gate = 0, intro = 2.0,
+    spawn_at_gate = 0, intro = 2.0, order = 0,
   }
-  local grid, deco, blocks = build_map(st)
+  local grid, deco, blocks, logo = build_map(st)
   G.grid, G.deco = grid, deco
-  -- hide the gate and the power-up under two different blocks
-  if #blocks >= 2 then
-    local a = table.remove(blocks, random(#blocks))
-    local b = table.remove(blocks, random(#blocks))
-    G.items[a] = "gate"
-    G.items[b] = st.pu
-    G.gate = a
-    if #blocks >= 1 and run.stage >= 3 then
-      -- a second, random bonus from stage 3 on
-      local extra = {"bomb", "fire"}
-      G.items[table.remove(blocks, random(#blocks))] = extra[random(#extra)]
+  -- the gate and the stage's own power-up under two different blocks,
+  -- then a random bonus under about one fork in five (one in three in the picture)
+  local a = table.remove(blocks, random(#blocks))
+  local b = table.remove(blocks, random(#blocks))
+  G.items[a] = "gate"
+  G.items[b] = st.pu
+  G.gate = a
+  local total = 0
+  for _, it in ipairs(ITEMS) do
+    if run.stage >= it[3] then total = total + it[2] end
+  end
+  for _, i in ipairs(blocks) do
+    if random() < (logo[i] and LOGO_ITEM_CHANCE or ITEM_CHANCE) then
+      local roll = random() * total
+      for _, it in ipairs(ITEMS) do
+        if run.stage >= it[3] then
+          roll = roll - it[2]
+          if roll <= 0 then G.items[i] = it[1] break end
+        end
+      end
     end
   end
   canvas = ui.canvas(MX, MY, COLS * T, ROWS * T, {scale = 1, color = BG})
@@ -904,6 +1143,14 @@ local function stage_cleared()
   award("s" .. run.stage, LAMP_STAGE, "stage " .. run.stage .. " cleared")
 end
 
+-- send the run's score to the board when it beats what this run already sent
+local function submit_run(stage, epoch)
+  if run and run.score > (run.sent or 0) then
+    run.sent = run.score
+    submit_score(run.score, stage, epoch)
+  end
+end
+
 local function award_best()
   if run and run.score > run.best_at_start and run.score > 0 then
     award("best", LAMP_BEST, "new best score")
@@ -921,6 +1168,7 @@ local function next_stage()
     -- the epoch bonus is for playing all 8 stages, not for a CONTINUE at 4-2
     if run.from_stage == 1 then award("epoch", LAMP_EPOCH, "epoch finished") end
     award_best()
+    submit_run(8, run.epoch - 1)
     show_win()
     return
   end
@@ -929,10 +1177,13 @@ end
 
 local function lost_life()
   run.lives = run.lives - 1
+  run.kick, run.remote, run.pierce, run.pass = false, false, false, false
+  run.speed = max(0, run.speed - 1)
   if run.lives <= 0 then
     if run.score > save.best then save.best = run.score end
     persist()
     award_best()
+    submit_run(run.stage, run.epoch)
     show_over()
     return
   end
@@ -949,7 +1200,7 @@ local function update_leds(dt)
     -- top LEDs: the fuse of the bomb closest to going off
     local tmin = nil
     for _, b in pairs(G.bombs) do
-      if not tmin or b.t < tmin then tmin = b.t end
+      if (not b.remote or b.lit) and (not tmin or b.t < tmin) then tmin = b.t end
     end
     local lit = tmin and math.ceil(tmin / FUSE * 6) or 0
     for n = 1, 6 do
@@ -1063,28 +1314,31 @@ function show_title()
   for x = 0, 9 do
     for y = 1, 4 do c:image(IMG.floor, x * 16, y * 16 - 3) end
   end
-  ui.rect(0, 26, ui.W, 158, {color = BG})
+  ui.rect(0, 26, ui.W, 170, {color = BG})
   ui.gradient(0, 26, ui.W, 2)
-  ui.gradient(0, 182, ui.W, 2)
-  ui.image(48, 36, IMG.title, {scale = 4})
-  ui.label(0, 76, "a Solana badge game", {size = 12, color = "dim", w = ui.W, align = "center"})
-  title_anim.hero = ui.image(20, 112, IMG.hero_r0, {scale = 3})
-  title_anim.bomb = ui.image(256, 112, IMG.bomb1, {scale = 3})
+  ui.gradient(0, 194, ui.W, 2)
+  ui.image(48, 32, IMG.title, {scale = 4})
+  ui.label(0, 70, "a Solana badge game", {size = 12, color = "dim", w = ui.W, align = "center"})
+  title_anim.hero = ui.image(20, 104, IMG.hero_r0, {scale = 3})
+  title_anim.bomb = ui.image(256, 104, IMG.bomb1, {scale = 3})
   title_anim.t = 0
   menu = {}
   local items = {{id = "new", text = "NEW GAME"}}
   if save.stage > 1 or save.epoch > 1 then
     items[#items + 1] = {id = "cont", text = "CONTINUE " .. stage_name(save.stage, save.epoch)}
   end
+  items[#items + 1] = {id = "lb", text = "LEADERBOARD"}
   items[#items + 1] = {id = "help", text = "HOW TO PLAY"}
+  items[#items + 1] = {id = "settings", text = "SETTINGS"}
   for n, it in ipairs(items) do
-    it.l = ui.label(0, 96 + (n - 1) * 22, "", {size = 14, w = ui.W, align = "center"})
+    it.l = ui.label(0, 88 + (n - 1) * 19, "", {size = 14, w = ui.W, align = "center"})
     menu[n] = it
   end
   menu_sel = 1
   menu_draw()
-  ui.label(0, 166, "BEST " .. save.best, {size = 12, color = "yellow", w = ui.W, align = "center"})
-  ui.hint("UP/DOWN choose   SELECT start   CANCEL exit")
+  ui.label(0, 180, "BEST " .. save.best, {size = 12, color = "yellow", w = ui.W, align = "center"})
+  ui.hint("UP/DOWN choose   SELECT open   CANCEL exit")
+  flush_pending()
 end
 
 local function title_tick(dt)
@@ -1113,39 +1367,165 @@ local function new_run(stage, epoch)
   start_stage()
 end
 
-function show_help()
+local help_page = 1
+local HELP_PAGES = 3
+
+local function screen(title)
   free_stage()
-  scene = "help"
   ui.clear()
   ui.bg(BG)
-  ui.label(0, 2, "HOW TO PLAY", {size = 20, color = "text", w = ui.W, align = "center"})
+  ui.label(0, 2, title, {size = 20, color = "text", w = ui.W, align = "center"})
   ui.gradient(60, 28, 200, 2)
-  local foes = {
-    {"rug1", "RUG", "slow, wanders"},
-    {"jeet1", "JEET", "fast, panics"},
-    {"sand1", "SANDWICH", "MEV bot, chases"},
-    {"fud1", "FUD", "drifts thru forks"},
-  }
-  for n, f in ipairs(foes) do
-    local y = 36 + (n - 1) * 30
-    ui.image(6, y, IMG[f[1]], {scale = 2})
-    ui.label(42, y + 2, f[2], {size = 12, color = "text"})
-    ui.label(42, y + 16, f[3], {size = 12, color = "dim"})
+end
+
+function show_help()
+  scene = "help"
+  local titles = {"HOW TO PLAY", "POWER-UPS", "!LAMPS & BOARD"}
+  screen(titles[help_page])
+  ui.label(282, 8, help_page .. "/" .. HELP_PAGES, {size = 12, color = "dim"})
+  local function text(x, y, t, c) ui.label(x, y, t, {size = 12, color = c or "text"}) end
+  if help_page == 1 then
+    text(8, 34, "Bomb the forks, clear every foe,")
+    text(8, 48, "then walk into the Finality gate.")
+    local foes = {
+      {"rug1", "RUG", "slow, wanders"}, {"jeet1", "JEET", "fast, panics"},
+      {"sand1", "SANDWICH", "MEV bot, chases"}, {"fud1", "FUD", "drifts thru forks"},
+    }
+    for n, f in ipairs(foes) do
+      local x, y = 8 + ((n - 1) % 2) * 156, 68 + ((n - 1) // 2) * 40
+      ui.image(x, y, IMG[f[1]], {scale = 2})
+      text(x + 36, y + 2, f[2])
+      text(x + 36, y + 16, f[3], "dim")
+    end
+    ui.image(8, 150, IMG.gate1, {scale = 2})
+    text(44, 152, "Gate hides under a fork.")
+    text(44, 166, "Die: special powers are lost.", "dim")
+    ui.label(0, 186, "D-pad move  SELECT bomb  CANCEL pause", {size = 12, color = "green", w = ui.W, align = "center"})
+  elseif help_page == 2 then
+    local pus = {
+      {"bomb", "+1 BOMB"}, {"fire", "+1 RANGE"}, {"speed", "IBRL: speed"},
+      {"shield", "SHIELD 10s"}, {"max", "MAX TPS: fire"}, {"pierce", "FIREDANCER"},
+      {"kick", "KICK bombs"}, {"remote", "REMOTE fuse"}, {"pass", "ZK PASS forks"},
+      {"life", "AIRDROP +1UP"}, {"time", "+30 SLOTS"}, {"curse", "OUTAGE: avoid!"},
+    }
+    for n, f in ipairs(pus) do
+      local x, y = 6 + ((n - 1) % 2) * 158, 34 + ((n - 1) // 2) * 25
+      ui.image(x, y, IMG["pu_" .. f[1] .. "1"])
+      text(x + 20, y + 2, f[2], f[1] == "curse" and "pink" or "text")
+    end
+    text(6, 182, "REMOTE: hold SELECT to set bombs off", "dim")
+  else
+    text(8, 34, "Earn !LAMPs, once a day each:", "yellow")
+    text(8, 50, "  1 for the first clear of a stage")
+    text(8, 64, "  5 for 4-2 in a run from 1-1")
+    text(8, 78, "  2 for a new best score")
+    text(8, 92, "Up to 15 a day. Link X in My Badge.", "dim")
+    text(8, 114, "LEADERBOARD", "yellow")
+    text(8, 130, "Your best score is sent after each")
+    text(8, 144, "game, with your X handle or 'anon'")
+    text(8, 158, "(change it in SETTINGS).")
+    text(8, 176, "Needs Wi-Fi. Sent later if offline.", "dim")
   end
-  local pus = {
-    {"pu_bomb1", "+1 BOMB"}, {"pu_fire1", "+1 RANGE"},
-    {"pu_speed1", "IBRL speed"}, {"pu_shield1", "SHIELD 10s"},
-  }
-  for n, f in ipairs(pus) do
-    local y = 36 + (n - 1) * 30
-    ui.image(176, y, IMG[f[1]], {scale = 2})
-    ui.label(212, y + 9, f[2], {size = 12, color = "text"})
+  ui.hint("LEFT/RIGHT page   CANCEL back")
+end
+
+-- leaderboard screen
+local lb = {}
+local lb_gen = 0
+
+local function lb_show(ok, res, gen)
+  if scene ~= "lb" or gen ~= lb_gen then return end   -- the player left the screen
+  if not ok then lb.status:text(LB_ERR[res] or ("Error: " .. tostring(res))) return end
+  local data = res.status == 200 and json.decode(res.body)
+  if type(data) ~= "table" or type(data.top) ~= "table" then
+    lb.status:text("Server said " .. tostring(res.status))
+    return
   end
-  ui.image(6, 158, IMG.gate1, {scale = 2})
-  ui.label(42, 158, "Clear all foes: Finality gate opens", {size = 12, color = "text"})
-  ui.label(42, 172, "!LAMP a day: 1/stage, +5 epoch, +2 best", {size = 12, color = "yellow"})
-  ui.label(0, 188, "D-pad move  SELECT bomb  CANCEL pause", {size = 12, color = "green", w = ui.W, align = "center"})
-  ui.hint("CANCEL back")
+  lb.status:text(#data.top == 0 and "No scores yet. Be the first!" or "")
+  for n = 1, 10 do
+    local r = data.top[n]
+    if type(r) == "table" then
+      lb.rows[n]:text(string.format("%2d %-16s %7d %5s", int_or(r.r, 1, 999999, n),
+        tostring(r.n):sub(1, 16), int_or(r.s, 0, 5000000, 0),
+        stage_name(int_or(r.st, 1, 8, 1), int_or(r.e, 1, 999, 1))))
+    else
+      lb.rows[n]:text("")
+    end
+  end
+  if type(data.me) == "table" then
+    lb.me:text("YOU  #" .. int_or(data.me.r, 1, 999999, 0) .. "   " .. int_or(data.me.s, 0, 5000000, 0))
+  else
+    lb.me:text("Finish a game to get on the board")
+  end
+end
+
+local function lb_fetch()
+  lb_gen = lb_gen + 1
+  local gen = lb_gen
+  lb.status:text("Loading...")
+  if not http then lb.status:text("This badge has no http yet") return end
+  http.get(LB .. "/top?n=10", function(ok, res) lb_show(ok, res, gen) end)
+end
+
+function show_lb()
+  scene = "lb"
+  screen("LEADERBOARD")
+  ui.label(8, 32, " # PLAYER             SCORE STAGE", {size = 12, color = "dim"})
+  lb.rows = {}
+  for n = 1, 10 do
+    lb.rows[n] = ui.label(8, 48 + (n - 1) * 14, "", {size = 12, color = n <= 3 and "yellow" or "text"})
+  end
+  lb.status = ui.label(0, 100, "", {size = 14, color = "dim", w = ui.W, align = "center"})
+  lb.me = ui.label(0, 190, "", {size = 12, color = "green", w = ui.W, align = "center"})
+  ui.hint("SELECT refresh   CANCEL back")
+  lb_fetch()
+end
+
+-- settings screen
+local set_sel = 1
+local set_rows = {}
+local function settings_draw()
+  local texts = {
+    "LEDS: " .. (settings.leds and "ON" or "OFF"),
+    "NAME ON BOARD: " .. (settings.name and lb_name() or "ANON"),
+    "RESET PROGRESS",
+  }
+  for n, l in ipairs(set_rows) do
+    local on = n == set_sel
+    l:text((on and "> " or "  ") .. texts[n] .. (on and " <" or "  "))
+    l:color(on and "green" or "text")
+  end
+end
+
+function show_settings()
+  scene = "settings"
+  screen("SETTINGS")
+  set_rows = {}
+  for n = 1, 3 do
+    set_rows[n] = ui.label(0, 50 + (n - 1) * 28, "", {size = 14, w = ui.W, align = "center"})
+  end
+  ui.label(0, 150, "Name: your X handle, or anon.", {size = 12, color = "dim", w = ui.W, align = "center"})
+  ui.label(0, 166, "Reset keeps today's !LAMP log.", {size = 12, color = "dim", w = ui.W, align = "center"})
+  set_sel = 1
+  settings_draw()
+  ui.hint("UP/DOWN choose   SELECT change   CANCEL back")
+end
+
+local function settings_select()
+  if set_sel == 1 then settings.leds = not settings.leds
+  elseif set_sel == 2 then settings.name = not settings.name
+  else
+    ui.confirm("Reset best score and progress?", function(yes)
+      if yes then
+        save.best, save.stage, save.epoch = 0, 1, 1
+        persist()
+        ui.toast("Progress reset")
+      end
+    end)
+  end
+  storage.set("settings", {leds = settings.leds, name = settings.name})
+  if not settings.leds then leds_off() end
+  settings_draw()
 end
 
 local function end_card(title, color, line1, line2)
@@ -1183,11 +1563,24 @@ function on_key(key, rep)
       local id = menu[menu_sel].id
       if id == "new" then new_run(1, 1)
       elseif id == "cont" then new_run(save.stage, save.epoch)
-      else show_help() end
+      elseif id == "lb" then show_lb()
+      elseif id == "settings" then show_settings()
+      else help_page = 1 show_help() end
     end
     return true
   elseif scene == "help" then
-    if key == "back" or key == "select" then show_title() end
+    if key == "back" then show_title()
+    elseif key == "right" or key == "select" then help_page = help_page % HELP_PAGES + 1 show_help()
+    elseif key == "left" then help_page = (help_page - 2) % HELP_PAGES + 1 show_help() end
+    return true
+  elseif scene == "lb" then
+    if key == "back" then show_title() elseif key == "select" then lb_fetch() end
+    return true
+  elseif scene == "settings" then
+    if key == "back" then show_title()
+    elseif key == "up" then set_sel = (set_sel - 2) % 3 + 1 settings_draw()
+    elseif key == "down" then set_sel = set_sel % 3 + 1 settings_draw()
+    elseif key == "select" then settings_select() end
     return true
   elseif scene == "over" then
     if key == "select" or key == "back" then show_title() end
@@ -1202,6 +1595,7 @@ function on_key(key, rep)
         if run.score > save.best then save.best = run.score end
         persist()
         award_best()
+        submit_run(run.stage, run.epoch)
         show_title()
       end
       return true

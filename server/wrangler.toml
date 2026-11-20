@@ -1,0 +1,8 @@
+name = "forkbomb-scores"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "forkbomb-scores"
+database_id = "d676866a-3aeb-4e98-9bba-0b9f4416b8c8"

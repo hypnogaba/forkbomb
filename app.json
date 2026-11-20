@@ -1,15 +1,18 @@
 {
   "id": "forkbomb",
   "name": "FORK BOMB",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "@hypnogaba",
-  "summary": "Bomb-maze arcade: blow up forks, dodge rugs, jeets and MEV sandwiches, reach the Finality gate. 8 stages, 4 worlds. Earn up to 15 !LAMPs a day.",
+  "summary": "Bomb-maze arcade: blow up forks shaped like the Solana and DoubleZero logos, 12 power-ups, a global leaderboard and up to 15 !LAMPs a day.",
   "icon": "star",
   "accent": "9945FF",
   "category": "games",
   "permissions": [
     "led",
-    "lamps"
+    "lamps",
+    "http"
   ],
-  "hosts": []
+  "hosts": [
+    "forkbomb-scores.hypnogaba.workers.dev"
+  ]
 }

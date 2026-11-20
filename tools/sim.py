@@ -4,7 +4,7 @@ plays, an instruction counter per callback, and PNG screenshots of the emulated 
   .venv/bin/python tools/sim.py [--seconds 120] [--seed 1] [--stage 1] [--shots out]
 """
 import argparse, os, random, sys
-from lupa import lua54
+from lupa import lua55
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -42,6 +42,7 @@ class Mock:
         self.leds = [0] * 8
         self.errors = []
         self.awards = []
+        self.http = []
 
     # images
     def load(self, rows, pal):
@@ -262,6 +263,15 @@ function sys.keys() return PY.keys() end
 function sys.memory() return {used = math.floor(collectgarbage("count") * 1024), max = 6291456} end
 function sys.exit() end
 function sys.time() return PY.now() end
+badge = {}
+function badge.owner() return "@val" end
+function badge.id() return "7K2Q9M" end
+http = {}
+function http.get(url, a, b) local cb = b or a local ok, r = PY.http("GET", url, "") cb(ok, r) end
+function http.post(url, body, a, b) local cb = b or a local ok, r = PY.http("POST", url, json.encode(body)) cb(ok, r) end
+json = {}
+function json.encode(v) return PY.jenc(v) end
+function json.decode(t) return PY.jdec(t) end
 lamps = {}
 function lamps.award(n, reason, cb) local ok, r = PY.award(n, reason) cb(ok, r) end
 storage = {}
@@ -276,7 +286,7 @@ class Runner:
         """award(n, reason) -> (ok, dict) fakes the !LAMP server; now() -> unix seconds;
         expose: Lua code appended to main.lua (the chunk's locals are in scope there)."""
         self.rng = random.Random(seed)
-        self.lua = lua54.LuaRuntime(unpack_returned_tuples=True)
+        self.lua = lua55.LuaRuntime(unpack_returned_tuples=True)
         self.m = Mock(self.lua, self.rng)
         m = self.m
         py = {
@@ -287,6 +297,8 @@ class Runner:
             "millis": lambda: m.millis,
             "now": now or (lambda: 1795000000 + m.millis // 1000),
             "award": self._award,
+            "http": self._http,
+            "jenc": self._jenc, "jdec": self._jdec,
             "keys": lambda: self.lua.table_from({k: True for k in m.keys}),
             "sget": lambda k: m.storage.get(k), "sset": lambda k, v: m.storage.__setitem__(k, v),
         }
@@ -306,12 +318,51 @@ class Runner:
             return ok, err, __icount
           end
         """)
+        self.http_answer = None
         self.answer = award or (lambda n, reason: (True, {"awarded": n, "balance": 100}))
         self.maxi = {}
         src = open(os.path.join(ROOT, "main.lua")).read() + ("\n" + expose if expose else "")
         self.lua.execute("__icount = 0")
         self.lua.execute(src)
         self.maxi["boot"] = self.lua.eval("__icount")
+
+    def _to_lua(self, v):
+        if isinstance(v, dict):
+            return self.lua.table_from({k: self._to_lua(x) for k, x in v.items()})
+        if isinstance(v, list):
+            return self.lua.table_from([self._to_lua(x) for x in v])
+        return v
+
+    def _to_py(self, v):
+        if hasattr(v, "items") and callable(getattr(v, "items")):
+            d = {k: self._to_py(x) for k, x in v.items()}
+            if d and all(isinstance(k, int) for k in d):
+                return [d[k] for k in sorted(d)]
+            return d
+        return v
+
+    def _jdec(self, text):
+        import json as _j
+        try:
+            return self._to_lua(_j.loads(str(text)))
+        except Exception:
+            return None
+
+    def _jenc(self, v):
+        import json as _j
+        return _j.dumps(self._to_py(v))
+
+    def _http(self, method, url, body):
+        self.m.http.append((method, str(url), str(body)))
+        if self.http_answer:
+            ok, res = self.http_answer(method, str(url), str(body))
+        else:
+            top = [{"r": i + 1, "n": n, "s": sc, "st": st, "e": 1} for i, (n, sc, st) in enumerate(
+                [("@toly", 48200, 8), ("@mert", 31050, 7), ("@val", 22000, 5), ("anon", 9050, 3)])]
+            import json as _j
+            ok, res = True, {"status": 200, "body": _j.dumps({"top": top, "me": {"r": 3, "s": 22000}}),
+                             "type": "application/json", "truncated": False}
+        return ok, (self.lua.table_from(res) if isinstance(res, dict) else res)
 
     def _award(self, n, reason):
         self.m.awards.append((int(n), str(reason)))

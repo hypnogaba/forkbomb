@@ -168,6 +168,11 @@ g.rect(3, 3, 2, 2, "D"); g.rect(11, 3, 2, 2, "D")
 g.rect(7, 11, 2, 2, "D")
 S["block"] = g.rows()
 
+# logo blocks: the same block in fixed colours (green, aqua, purple, white)
+LOGO_COLS = {"g": ("g", "l", "G"), "a": ("a", "w", "A"), "p": ("p", "v", "P"), "w": ("s", "w", "d")}
+for key, (face, light, dark) in LOGO_COLS.items():
+    S["lb_" + key] = recolor(S["block"], {"B": face, "L": light, "D": dark})
+
 # block breaking: 3 frames
 b0 = [list(r) for r in S["block"]]
 crack = [(7, 2), (6, 3), (6, 4), (7, 5), (8, 6), (8, 7), (7, 8), (6, 9), (5, 10), (10, 3), (11, 7), (12, 8), (3, 7), (2, 8)]
@@ -386,6 +391,104 @@ for name, border, icon in [
     S[name + "1"] = plate(border, icon)
     S[name + "2"] = plate("w", icon)
 
+ICON_MAX = recolor(ICON_FIRE, {"p": "o", "a": "y"})
+ICON_PIERCE = [
+    "..........",
+    "...kkkk...",
+    "...kddk...",
+    "oooooooyy.",
+    "oyyyyyyyyy",
+    "oooooooyy.",
+    "...kddk...",
+    "...kkkk...",
+    "..........",
+    "..........",
+]
+ICON_KICK = [
+    "..........",
+    "..kkk.....",
+    "..krk.....",
+    "..krk.....",
+    "..krk.....",
+    "..krrkkk..",
+    ".krrrrrrk.",
+    ".kwwwwwwk.",
+    "..kkkkkk..",
+    "..........",
+]
+ICON_REMOTE = [
+    "......k...",
+    ".....k....",
+    "....k.....",
+    "..kkkkkk..",
+    "..kssssk..",
+    "..ksrrsk..",
+    "..ksrrsk..",
+    "..kssssk..",
+    "..kddddk..",
+    "..kkkkkk..",
+]
+ICON_PASS = [  # "ZK"
+    "..........",
+    ".vvv.v..v.",
+    "...v.v.v..",
+    "..v..vv...",
+    ".v...v.v..",
+    ".vvv.v..v.",
+    "..........",
+    ".a.a.a.a..",
+    "..........",
+    "..........",
+]
+ICON_LIFE = [  # airdrop: a crate on a parachute
+    "..pppppp..",
+    ".pggppggp.",
+    "pk......kp",
+    ".k......k.",
+    "..k....k..",
+    "...k..k...",
+    "...NNNN...",
+    "...NnnN...",
+    "...NNNN...",
+    "..........",
+]
+ICON_TIME = [  # hourglass
+    ".kkkkkkk..",
+    ".kyyyyyk..",
+    "..kyyyk...",
+    "...kyk....",
+    "....k.....",
+    "...k.k....",
+    "..k.y.k...",
+    ".kyyyyyk..",
+    ".kkkkkkk..",
+    "..........",
+]
+ICON_CURSE = [  # outage: warning triangle
+    "....rr....",
+    "...rrrr...",
+    "...rwwr...",
+    "..rrwwrr..",
+    "..rrwwrr..",
+    ".rrrwwrrr.",
+    ".rrrrrrrr.",
+    "rrrrwwrrrr",
+    "rrrrrrrrrr",
+    "..........",
+]
+for name, border, icon in [
+    ("pu_max", "y", ICON_MAX),
+    ("pu_pierce", "o", ICON_PIERCE),
+    ("pu_kick", "r", ICON_KICK),
+    ("pu_remote", "a", ICON_REMOTE),
+    ("pu_pass", "v", ICON_PASS),
+    ("pu_life", "g", ICON_LIFE),
+    ("pu_time", "y", ICON_TIME),
+    ("pu_curse", "r", ICON_CURSE),
+]:
+    S[name + "1"] = plate(border, icon)
+    S[name + "2"] = plate("w", icon)
+
 # finality gate (exit)
 def gate(open_, phase):
     g = Grid()
@@ -593,6 +696,56 @@ S["puff"] = PUFF.rows()
 
 # ---------------------------------------------------------------- HUD icons (8x8)
 HUD = {
+    "i_kick": [
+        ".kkk....",
+        ".krk....",
+        ".krk....",
+        ".krrkkk.",
+        "krrrrrrk",
+        "kwwwwwwk",
+        ".kkkkkk.",
+        "........",
+    ],
+    "i_remote": [
+        ".....k..",
+        "....k...",
+        ".kkkkkk.",
+        ".ksssk..",
+        ".ksrrsk.",
+        ".ksrrsk.",
+        ".kkkkkk.",
+        "........",
+    ],
+    "i_pierce": [
+        "..kkk...",
+        "..kdk...",
+        "ooooooy.",
+        "oyyyyyyy",
+        "ooooooy.",
+        "..kdk...",
+        "..kkk...",
+        "........",
+    ],
+    "i_pass": [
+        "vvv.v..v",
+        "..v.v.v.",
+        ".v..vv..",
+        "v...v.v.",
+        "vvv.v..v",
+        "........",
+        "a.a.a.a.",
+        "........",
+    ],
+    "i_curse": [
+        "...rr...",
+        "..rwwr..",
+        "..rwwr..",
+        ".rrwwrr.",
+        ".rrrrrr.",
+        "rrrwwrrr",
+        "rrrrrrrr",
+        "........",
+    ],
     "i_life": [
         "..kkkk..",
         ".kppppk.",
