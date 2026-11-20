@@ -112,6 +112,59 @@ local function persist()
   storage.set("epoch", save.epoch)
 end
 
+-- ------------------------------------------------------------------ !LAMP rewards
+-- Once per day each: 1 for the first clear of each stage (max 8), 5 for finishing an
+-- epoch (stage 4-2), 2 for a new best score. At most 15 a day; replays earn nothing.
+-- The server's award cap is the real limit; this only keeps the app from asking twice.
+local LAMP_STAGE, LAMP_EPOCH, LAMP_BEST = 1, 5, 2
+local needs_x = false            -- the server said "link X first": stop asking this session
+local lamp_pending = {}          -- awards asked for and not answered yet (this session only)
+local lamp_session = {}          -- what this session already got, for badges without a clock
+
+local function today()
+  local t = sys.time and sys.time()
+  if not t then return nil end
+  return floor(t / 86400)
+end
+
+local function lamp_log()
+  local d = today()
+  if not d then return nil end
+  local log = storage.get("lamps")
+  if type(log) ~= "table" or log.day ~= d then log = {day = d, got = {}} end
+  if type(log.got) ~= "table" then log.got = {} end
+  return log
+end
+
+-- key: "s3" (stage 3), "epoch" or "best".
+local function award(key, amount, reason)
+  if not lamps or not lamps.award or needs_x then return end
+  local log = lamp_log()       -- nil when the badge has no clock yet: the session guards it
+  local day = log and log.day
+  local skey = key .. "@" .. tostring(day)
+  if (log and log.got[key]) or lamp_session[skey] or lamp_pending[key] then return end
+  lamp_pending[key] = true
+  lamps.award(amount, reason, function(ok, r)
+    lamp_pending[key] = nil
+    if ok and type(r) == "table" and r.needsX then
+      -- not linked yet: say so once and stop asking until the next launch
+      needs_x = true
+      ui.toast("Link X in My Badge to earn !LAMPs")
+      return
+    end
+    if not ok then return end      -- offline or busy: ask again next time
+    lamp_session[skey] = true      -- paid, or the daily cap is used up
+    if type(r) == "table" and (r.awarded or 0) > 0 then
+      ui.toast("+" .. r.awarded .. " !LAMP" .. (r.awarded > 1 and "s" or "") .. "  " .. reason)
+    end
+    local now = lamp_log()
+    if now and now.day == day then -- an answer after midnight does not use up the new day
+      now.got[key] = true
+      storage.set("lamps", now)
+    end
+  end)
+end
+
 -- ------------------------------------------------------------------ game state
 local scene = "title"
 local run = nil        -- {stage, epoch, score, lives, bombs, fire, speed}
@@ -848,6 +901,13 @@ local function stage_cleared()
   overlay[#overlay + 1] = ui.gradient(0, 141, ui.W, 3)
   center_label(80, "FINALIZED!", 32, "green")
   center_label(118, "time bonus " .. bonus, 14, "text")
+  award("s" .. run.stage, LAMP_STAGE, "stage " .. run.stage .. " cleared")
+end
+
+local function award_best()
+  if run and run.score > run.best_at_start and run.score > 0 then
+    award("best", LAMP_BEST, "new best score")
+  end
 end
 
 local function next_stage()
@@ -858,6 +918,9 @@ local function next_stage()
     if run.score > save.best then save.best = run.score end
     save.stage, save.epoch = 1, run.epoch
     persist()
+    -- the epoch bonus is for playing all 8 stages, not for a CONTINUE at 4-2
+    if run.from_stage == 1 then award("epoch", LAMP_EPOCH, "epoch finished") end
+    award_best()
     show_win()
     return
   end
@@ -869,6 +932,7 @@ local function lost_life()
   if run.lives <= 0 then
     if run.score > save.best then save.best = run.score end
     persist()
+    award_best()
     show_over()
     return
   end
@@ -1039,7 +1103,8 @@ local function title_tick(dt)
 end
 
 local function new_run(stage, epoch)
-  run = {stage = stage, epoch = epoch, score = 0, lives = 3, bombs = 1, fire = 1, speed = 0}
+  run = {stage = stage, epoch = epoch, score = 0, lives = 3, bombs = 1, fire = 1, speed = 0,
+    best_at_start = save.best, from_stage = stage}
   if stage > 1 or epoch > 1 then
     -- a continue starts with a little firepower for where it lands
     run.bombs = min(4, 1 + floor((stage - 1) / 2))
@@ -1077,8 +1142,8 @@ function show_help()
     ui.label(212, y + 9, f[2], {size = 12, color = "text"})
   end
   ui.image(6, 158, IMG.gate1, {scale = 2})
-  ui.label(42, 158, "Clear every foe to open the", {size = 12, color = "text"})
-  ui.label(42, 172, "Finality gate. Hidden under a fork.", {size = 12, color = "text"})
+  ui.label(42, 158, "Clear all foes: Finality gate opens", {size = 12, color = "text"})
+  ui.label(42, 172, "!LAMP a day: 1/stage, +5 epoch, +2 best", {size = 12, color = "yellow"})
   ui.label(0, 188, "D-pad move  SELECT bomb  CANCEL pause", {size = 12, color = "green", w = ui.W, align = "center"})
   ui.hint("CANCEL back")
 end
@@ -1136,6 +1201,7 @@ function on_key(key, rep)
       elseif key == "back" and not rep then
         if run.score > save.best then save.best = run.score end
         persist()
+        award_best()
         show_title()
       end
       return true

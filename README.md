@@ -37,17 +37,34 @@ open; the two on the right edge show lives.
 
 Controls: D-pad move, SELECT bomb, CANCEL pause (CANCEL again quits to the menu).
 
+## !LAMP rewards
+
+Each once per day, at most 15 !LAMPs a day per player:
+
+| Earn | !LAMPs |
+|---|---|
+| First clear of each stage (8 stages) | 1 each |
+| Finishing stage 4-2 in a run that started at 1-1 (a CONTINUE at 4-2 does not count) | 5 |
+| A new best score | 2 |
+
+Replays of a cleared stage earn nothing that day. Offline or busy answers are retried on the next
+clear; an answer that arrives after midnight does not use up the new day; players without X linked
+get one hint and no further requests that session; badges without a synced clock are limited to once
+per session. `lamps.award` pays nothing until the organisers set the app's award cap.
+A new best is rewarded at game over, at the end of an epoch and on quit from the pause menu, not on HOME.
+
 ![worlds](docs/worlds.png)
 
 ## Files
 
 | Path | What |
 |---|---|
-| `app.json` | Manifest: id `forkbomb`, permission `led` only |
+| `app.json` | Manifest: id `forkbomb`, permissions `led` and `lamps` |
 | `main.lua` | The game |
 | `art.lua` | All sprites as pixel-art rows. Generated, do not edit by hand |
 | `tools/art.py` | Art source: palette, world colours, every sprite. Writes `art.lua` and a preview sheet |
 | `tools/sim.py` | Headless runner: a Python mock of the badge Lua API, a bot that plays, an instruction counter per callback and PNG screenshots |
+| `tools/test_lamps.py` | Checks the !LAMP rules: once a day, retries, X linking, midnight, CONTINUE, no clock |
 | `tools/bundle.py` | Packs the app as gzip+base64 for pasting into the emulator page |
 | `docs/` | Sprite sheet and screenshots |
 
@@ -76,7 +93,7 @@ Publish: https://solana.com/breakpoint/badge/apps/submit, drop the folder (app.j
 
 - Under 128 UI objects (about 30 in play), 200 000 instructions per callback (about 31 000 worst case in the sim)
 - One canvas for the map, redrawn per changed tile only; sprites move with `image:pos`
-- No network, no keys, no real value
+- No http, no keys, no real value; only `lamps.award` for in-game !LAMPs
 
 ## License
 

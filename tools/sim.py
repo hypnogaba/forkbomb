@@ -41,6 +41,7 @@ class Mock:
         self.hint = ""
         self.leds = [0] * 8
         self.errors = []
+        self.awards = []
 
     # images
     def load(self, rows, pal):
@@ -260,6 +261,9 @@ function sys.millis() return PY.millis() end
 function sys.keys() return PY.keys() end
 function sys.memory() return {used = math.floor(collectgarbage("count") * 1024), max = 6291456} end
 function sys.exit() end
+function sys.time() return PY.now() end
+lamps = {}
+function lamps.award(n, reason, cb) local ok, r = PY.award(n, reason) cb(ok, r) end
 storage = {}
 function storage.get(k) return PY.sget(k) end
 function storage.set(k, v) PY.sset(k, v) end
@@ -268,7 +272,9 @@ function storage.remove(k) PY.sset(k, nil) end
 
 
 class Runner:
-    def __init__(self, seed, stage=1):
+    def __init__(self, seed, stage=1, award=None, now=None, expose=None):
+        """award(n, reason) -> (ok, dict) fakes the !LAMP server; now() -> unix seconds;
+        expose: Lua code appended to main.lua (the chunk's locals are in scope there)."""
         self.rng = random.Random(seed)
         self.lua = lua54.LuaRuntime(unpack_returned_tuples=True)
         self.m = Mock(self.lua, self.rng)
@@ -279,6 +285,8 @@ class Runner:
             "toast": lambda t: m.toasts.append((m.millis, t)), "clear": m.clear,
             "led": lambda i, c: m.leds.__setitem__(int(i) - 1, int(c)),
             "millis": lambda: m.millis,
+            "now": now or (lambda: 1795000000 + m.millis // 1000),
+            "award": self._award,
             "keys": lambda: self.lua.table_from({k: True for k in m.keys}),
             "sget": lambda k: m.storage.get(k), "sset": lambda k, v: m.storage.__setitem__(k, v),
         }
@@ -298,11 +306,17 @@ class Runner:
             return ok, err, __icount
           end
         """)
+        self.answer = award or (lambda n, reason: (True, {"awarded": n, "balance": 100}))
         self.maxi = {}
-        src = open(os.path.join(ROOT, "main.lua")).read()
+        src = open(os.path.join(ROOT, "main.lua")).read() + ("\n" + expose if expose else "")
         self.lua.execute("__icount = 0")
         self.lua.execute(src)
         self.maxi["boot"] = self.lua.eval("__icount")
+
+    def _award(self, n, reason):
+        self.m.awards.append((int(n), str(reason)))
+        ok, res = self.answer(int(n), str(reason))
+        return ok, (self.lua.table_from(res) if isinstance(res, dict) else res)
 
     def cb(self, name, *args):
         f = self.lua.globals()[name]
@@ -366,5 +380,6 @@ if __name__ == "__main__":
         r.m.render(os.path.join(a.shots, "title.png"))
     bot_play(r, a.seconds, a.shots, a.every, menu_pick=1 if a.stage > 1 else 0)
     print("max instructions per callback:", r.maxi)
+    print("awards:", r.m.awards, "total", sum(n for n, _ in r.m.awards))
     print("toasts:", [t for _, t in r.m.toasts][-8:])
     print("storage:", r.m.storage)
