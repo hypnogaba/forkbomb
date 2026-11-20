@@ -1,9 +1,9 @@
 {
   "id": "forkbomb",
   "name": "FORK BOMB",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "author": "@hypnogaba",
-  "summary": "Bomb-maze arcade: blow up forks shaped like the Solana and DoubleZero logos, 12 power-ups, a global leaderboard and up to 15 !LAMPs a day.",
+  "summary": "Bomb-maze arcade on Solana: blast forks shaped like the Solana logo, dodge rugs, jeets and MEV bots, 12 power-ups, global leaderboard, daily !LAMPs.",
   "icon": "star",
   "accent": "9945FF",
   "category": "games",

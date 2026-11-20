@@ -592,6 +592,49 @@ S["hero_x2"] = glitch(HERO_D)
 S["hero_x3"] = dust(HERO_D, 3)
 S["hero_x4"] = dust(HERO_D, 9)
 
+# ---------------------------------------------------------------- tribute skins (secret)
+# Friendly pixel homages, unlocked with a code on the title screen.
+SKIN_HEADS = {
+    "toly": {  # dark hair, glasses, beard, black tee
+        "d": ["................", ".....kkkkkk.....", "....kKKKKKKk....", "...kKKKKKKKKk...",
+              "...kKnnnnnnKk...", "...kwwknnkwwk...", "...knnnnnnnnk...", "...kNNNnnNNNk...",
+              "....kNNNNNNk....", ".....kkkkkk....."],
+        "u": ["................", ".....kkkkkk.....", "....kKKKKKKk....", "...kKKKKKKKKk...",
+              "...kKKKKKKKKk...", "...kKKKKKKKKk...", "...kKKKKKKKKk...", "...kKKKKKKKKk...",
+              "....kKKKKKKk....", ".....kkkkkk....."],
+        "l": ["................", ".....kkkkkk.....", "....kKKKKKKk....", "...kKKKKKKKKk...",
+              "..knnnnnnKKKk...", "..kwwknnnKKKk...", "..knnnnnnnKKk...", "..kNNNnnnnKk....",
+              "...kNNNNNNk.....", "....kkkkkk......"],
+        "body": {"p": "d", "P": "x", "v": "s", "g": "x", "s": "n"},
+    },
+    "mert": {  # bald, beard, orange hoodie
+        "d": ["................", ".....kkkkkk.....", "....knnnnnnk....", "...knnwnnnnnk...",
+              "...knnnnnnnnk...", "...knkknnkknk...", "...knnnnnnnnk...", "...kNnnkknnNk...",
+              "....kNNNNNNk....", ".....kkkkkk....."],
+        "u": ["................", ".....kkkkkk.....", "....knnnnnnk....", "...knnwnnnnnk...",
+              "...knnnnnnnnk...", "...knnnnnnnnk...", "...knnnnnnnnk...", "...kNnnnnnnNk...",
+              "....kNNNNNNk....", ".....kkkkkk....."],
+        "l": ["................", ".....kkkkkk.....", "....knnnnnnk....", "...knwnnnnnnk...",
+              "..knnnnnnnnnk...", "..knkknnnnnnk...", "..knnnnnnnnnk...", "..kNkknnnnNNk...",
+              "...kNNNNNNk.....", "....kkkkkk......"],
+        "body": {"p": "o", "P": "R", "v": "y", "g": "w", "s": "n"},
+    },
+}
+SKIN_HEADS["toly"]["d"] = recolor(SKIN_HEADS["toly"]["d"], {"K": "x"})
+SKIN_HEADS["toly"]["u"] = recolor(SKIN_HEADS["toly"]["u"], {"K": "x"})
+SKIN_HEADS["toly"]["l"] = recolor(SKIN_HEADS["toly"]["l"], {"K": "x"})
+for skin, h in SKIN_HEADS.items():
+    for d in ("d", "u", "l"):
+        for f in range(3):
+            body = recolor(S[f"hero_{d}{f}"][10:], h["body"])
+            S[f"{skin}_{d}{f}"] = check(f"{skin}_{d}{f}", h[d] + body)
+    for f in range(3):
+        S[f"{skin}_r{f}"] = mirror(S[f"{skin}_l{f}"])
+    S[f"{skin}_x1"] = silhouette(S[f"{skin}_d0"], "w")
+    S[f"{skin}_x2"] = glitch(S[f"{skin}_d0"])
+    S[f"{skin}_x3"] = dust(S[f"{skin}_d0"], 3)
+    S[f"{skin}_x4"] = dust(S[f"{skin}_d0"], 9)
+
 # ---------------------------------------------------------------- enemies
 RUG1 = [
     "................",

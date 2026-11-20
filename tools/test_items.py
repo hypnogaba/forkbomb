@@ -198,5 +198,36 @@ T.update_bombs(0.01)
 check("hold SELECT: the far bomb went off, the one underfoot waits",
       G.bombs[T.idx(3, 1)] is None and G.bombs[T.idx(6, 1)] is not None)
 
+# 10. secrets: codes on the title screen
+r = Runner(1, expose=EXPOSE + "; __S = {settings = settings, ibrl = function() return ibrl end}")
+S = r.lua.globals().__S
+for k in "up up down down left right left right".split():
+    r.key(k)
+check("IBRL code toggles IBRL MODE", S.ibrl() is True)
+for k in "left right left right up up".split():
+    r.key(k)
+check("skin code switches the hero to TOLY", S.settings.skin == "toly")
+for k in "left right left right up up".split():
+    r.key(k)
+check("again: MERT", S.settings.skin == "mert")
+for k in "up down up down left right".split():
+    r.key(k)
+check("gm code answers", any("gm gm" in t for _, t in r.m.toasts))
+r.key("select")      # play a bit with the MERT skin and IBRL MODE on
+for _ in range(200):
+    r.tick(30)
+check("game runs with a tribute skin", True)
+
+# 11. WAGMI: breaking the whole picture pays 2000 once
+r, T, G = game(1)
+run = T.run()
+kill_foes(G)
+pic = [k for k, v in G.deco.items() if v and G.grid[k] == T.BLOCK]
+s0 = run.score
+for k in pic:
+    G.breaking[k] = 0.01
+T.update_bombs(0.02)
+check("WAGMI bonus once the picture is gone", run.score - s0 == 10 * len(pic) + 2000)
+
 print("FAILED" if fails else "all passed", fails)
 sys.exit(1 if fails else 0)

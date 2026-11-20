@@ -103,14 +103,20 @@ end
 
 -- ------------------------------------------------------------------ LEDs
 -- ------------------------------------------------------------------ settings
-local settings = {leds = true, name = true}
+local settings = {leds = true, name = true, skin = "hero"}
+local SKINS = {hero = "VAL", toly = "TOLY", mert = "MERT"}
 do
   local st = storage.get("settings")
   if type(st) == "table" then
     if st.leds == false then settings.leds = false end
     if st.name == false then settings.name = false end
+    if SKINS[st.skin] then settings.skin = st.skin end
   end
 end
+local function save_settings()
+  storage.set("settings", {leds = settings.leds, name = settings.name, skin = settings.skin})
+end
+local ibrl = false      -- IBRL MODE (secret): everyone moves faster
 
 local has_led = led ~= nil
 local led_now = {}
@@ -549,7 +555,7 @@ local function make_foe(kind, c, r)
   local def = FOES[kind]
   local e = {
     kind = kind, x = c * T, y = r * T, tc = c, tr = r, dx = 0, dy = 0,
-    speed = def.speed * (1 + 0.15 * (run.epoch - 1)),
+    speed = def.speed * (1 + 0.15 * (run.epoch - 1)) * (ibrl and 1.3 or 1),
     ghost = def.ghost, alive = true, dying = 0, anim = random() * 2,
   }
   e.img = ui.image(MX + e.x, MY + e.y, IMG[kind .. "1"])
@@ -679,7 +685,7 @@ end
 -- ------------------------------------------------------------------ player
 local function make_player()
   local p = {x = T, y = T, dir = "d", walk = 0, alive = true, dying = 0, shield = 0, want = nil}
-  p.img = ui.image(MX + p.x, MY + p.y, IMG.hero_d0)
+  p.img = ui.image(MX + p.x, MY + p.y, IMG[settings.skin .. "_d0"])
   return p
 end
 
@@ -765,7 +771,8 @@ local function update_player(dt)
   if not p.alive then
     p.dying = p.dying + dt
     local k = p.dying
-    local f = k < 0.25 and "hero_x1" or k < 0.6 and "hero_x2" or k < 0.9 and "hero_x3" or k < 1.2 and "hero_x4" or nil
+    local f = k < 0.25 and "_x1" or k < 0.6 and "_x2" or k < 0.9 and "_x3" or k < 1.2 and "_x4" or nil
+    if f then f = settings.skin .. f end
     if f then p.img:set(IMG[f]) else p.img:show(false) end
     return
   end
@@ -798,7 +805,7 @@ local function update_player(dt)
       k = ({left = "right", right = "left", up = "down", down = "up"})[k]
     end
     local d = KEYDIR[k]
-    local speed = (46 + run.speed * 12) * (p.curse == "slow" and 0.5 or 1)
+    local speed = (46 + run.speed * 12) * (p.curse == "slow" and 0.5 or 1) * (ibrl and 1.4 or 1)
     local ox, oy = p.x, p.y
     move_axis(p, d[1], d[2], speed * dt)
     p.dir = d[3]
@@ -811,7 +818,7 @@ local function update_player(dt)
     local seq = {1, 0, 2, 0}
     fr = seq[floor(p.walk / 5) % 4 + 1]
   end
-  local name = "hero_" .. p.dir .. fr
+  local name = settings.skin .. "_" .. p.dir .. fr
   if p.frame ~= name then p.frame = name p.img:set(IMG[name]) end
   p.img:pos(MX + floor(p.x), MY + floor(p.y))
   -- bombs the player has stepped off become solid
@@ -971,6 +978,15 @@ local function update_bombs(dt)
       G.breaking[i] = nil
       G.grid[i] = FLOOR
       run.score = run.score + 10
+      if G.deco[i] then
+        G.pic_left = G.pic_left - 1
+        if G.pic_left == 0 then
+          -- WAGMI: the whole picture is gone
+          run.score = run.score + 2000
+          ui.toast("WAGMI! Picture cleared +2000")
+          flash(0x14F195, 0.6)
+        end
+      end
       if G.items[i] then G.fresh[i] = 0.6 end
       touch(i)
     else
@@ -1088,6 +1104,8 @@ function start_stage()
   }
   local grid, deco, blocks, logo = build_map(st)
   G.grid, G.deco = grid, deco
+  G.pic_left = 0
+  for k in pairs(deco) do G.pic_left = G.pic_left + 1 end
   -- the gate and the stage's own power-up under two different blocks,
   -- then a random bonus under about one fork in five (one in three in the picture)
   local a = table.remove(blocks, random(#blocks))
@@ -1123,6 +1141,7 @@ function start_stage()
   overlay[#overlay + 1] = ui.gradient(0, 70, ui.W, 3)
   overlay[#overlay + 1] = ui.gradient(0, 141, ui.W, 3)
   local label = (run.epoch > 1 and ("EPOCH " .. run.epoch .. "  ") or "") .. "STAGE " .. stage_name(run.stage, 1)
+  if ibrl then center_label(54, "IBRL MODE", 14, "yellow") end
   center_label(80, label, 32, "text")
   center_label(118, W.name .. "  -  find the Finality gate", 14, W.L)
   save.stage, save.epoch = run.stage, run.epoch
@@ -1140,6 +1159,11 @@ local function stage_cleared()
   overlay[#overlay + 1] = ui.gradient(0, 141, ui.W, 3)
   center_label(80, "FINALIZED!", 32, "green")
   center_label(118, "time bonus " .. bonus, 14, "text")
+  if G.clock - 2.0 < 60 then       -- play time, without the 2 s intro card
+    -- PROOF OF HISTORY: a stage cleared in under a minute
+    run.score = run.score + 1500
+    center_label(52, "PROOF OF HISTORY +1500", 14, "yellow")
+  end
   award("s" .. run.stage, LAMP_STAGE, "stage " .. run.stage .. " cleared")
 end
 
@@ -1319,7 +1343,7 @@ function show_title()
   ui.gradient(0, 194, ui.W, 2)
   ui.image(48, 32, IMG.title, {scale = 4})
   ui.label(0, 70, "a Solana badge game", {size = 12, color = "dim", w = ui.W, align = "center"})
-  title_anim.hero = ui.image(20, 104, IMG.hero_r0, {scale = 3})
+  title_anim.hero = ui.image(20, 104, IMG[settings.skin .. "_r0"], {scale = 3})
   title_anim.bomb = ui.image(256, 104, IMG.bomb1, {scale = 3})
   title_anim.t = 0
   menu = {}
@@ -1345,8 +1369,13 @@ local function title_tick(dt)
   title_anim.t = title_anim.t + dt
   local t = title_anim.t
   local seq = {1, 0, 2, 0}
-  title_anim.hero:set(IMG["hero_r" .. seq[floor(t * 6) % 4 + 1]])
+  title_anim.hero:set(IMG[settings.skin .. "_r" .. seq[floor(t * 6) % 4 + 1]])
   title_anim.bomb:set(IMG["bomb" .. (floor(t * 4) % 3 + 1)])
+  if title_anim.gm and title_anim.gm > 0 then
+    title_anim.gm = title_anim.gm - dt
+    for n = 1, 8 do led_put(n, (floor(t * 20) + n) % 2 == 0 and 0xFFFFFF or 0x14F195) end
+    return
+  end
   if has_led then
     for n = 1, 6 do
       local ph = (floor(t * 8) + n) % 6
@@ -1425,6 +1454,7 @@ function show_help()
     text(8, 144, "game, with your X handle or 'anon'")
     text(8, 158, "(change it in SETTINGS).")
     text(8, 176, "Needs Wi-Fi. Sent later if offline.", "dim")
+    text(8, 190, "psst: the title screen keeps secrets", "pink")
   end
   ui.hint("LEFT/RIGHT page   CANCEL back")
 end
@@ -1523,7 +1553,7 @@ local function settings_select()
       end
     end)
   end
-  storage.set("settings", {leds = settings.leds, name = settings.name})
+  save_settings()
   if not settings.leds then leds_off() end
   settings_draw()
 end
@@ -1554,9 +1584,44 @@ function show_win()
 end
 
 -- ------------------------------------------------------------------ host callbacks
+-- secret codes typed on the title screen (directions only)
+local CODES = {
+  ibrl = "up up down down left right left right",
+  skin = "left right left right up up",
+  gm = "up down up down left right",
+}
+local typed = {}
+local function check_codes(key)
+  typed[#typed + 1] = key
+  if #typed > 8 then table.remove(typed, 1) end
+  local s = table.concat(typed, " ")
+  for name, code in pairs(CODES) do
+    if s:sub(-#code) == code then
+      typed = {}
+      if name == "ibrl" then
+        ibrl = not ibrl
+        ui.toast(ibrl and "IBRL MODE ON: increase bandwidth, reduce latency" or "IBRL MODE OFF")
+      elseif name == "skin" then
+        local order = {"hero", "toly", "mert"}
+        local n = 1
+        for k, v in ipairs(order) do if v == settings.skin then n = k end end
+        settings.skin = order[n % #order + 1]
+        save_settings()
+        title_anim.hero:set(IMG[settings.skin .. "_r0"])
+        ui.toast("Hero: " .. SKINS[settings.skin] .. (settings.skin ~= "hero" and " (tribute skin)" or ""))
+      else
+        ui.toast("gm gm. WAGMI")
+        title_anim.gm = 1.2
+      end
+      return
+    end
+  end
+end
+
 function on_key(key, rep)
   if scene == "title" then
     if key == "back" then return false end
+    if KEYDIR[key] and not rep then check_codes(key) end
     if key == "up" then menu_sel = (menu_sel - 2) % #menu + 1 menu_draw()
     elseif key == "down" then menu_sel = menu_sel % #menu + 1 menu_draw()
     elseif key == "select" then
