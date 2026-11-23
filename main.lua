@@ -1653,6 +1653,7 @@ local function settings_draw()
     "LEDS: " .. (settings.leds and "ON" or "OFF"),
     "NAME ON BOARD: " .. (settings.name and lb_name() or "ANON"),
     "RESET PROGRESS",
+    "MADE BY @HYPNOGABA (X)",
   }
   for n, l in ipairs(set_rows) do
     local on = n == set_sel
@@ -1665,8 +1666,8 @@ function show_settings()
   scene = "settings"
   screen("SETTINGS")
   set_rows = {}
-  for n = 1, 3 do
-    set_rows[n] = ui.label(0, 50 + (n - 1) * 28, "", {size = 14, w = ui.W, align = "center"})
+  for n = 1, 4 do
+    set_rows[n] = ui.label(0, 44 + (n - 1) * 24, "", {size = 14, w = ui.W, align = "center"})
   end
   ui.label(0, 150, "Name: your X handle, or anon.", {size = 12, color = "dim", w = ui.W, align = "center"})
   ui.label(0, 166, "Reset keeps today's !LAMP log.", {size = 12, color = "dim", w = ui.W, align = "center"})
@@ -1678,6 +1679,20 @@ end
 local function settings_select()
   if set_sel == 1 then settings.leds = not settings.leds
   elseif set_sel == 2 then settings.name = not settings.name
+  elseif set_sel == 4 then
+    -- the maker on X: a QR the phone scans
+    scene = "author"
+    ui.clear()
+    ui.bg(0x0B0B14)
+    ui.label(8, 10, "MADE BY", {size = 12, color = "dim"})
+    ui.label(8, 26, "@hypnogaba", {size = 20, color = "text"})
+    ui.label(8, 60, "Scan for X:", {size = 12, color = "dim"})
+    ui.label(8, 74, "x.com/hypnogaba", {size = 12, color = "green"})
+    if not (ui.qr and pcall(ui.qr, 130, 8, 180, "https://x.com/hypnogaba")) then
+      ui.label(130, 90, "Update Solana OS", {size = 14, color = "pink"})
+    end
+    ui.hint("CANCEL back")
+    return
   else
     ui.confirm("Reset best score and progress?", function(yes)
       if yes then
@@ -1818,10 +1833,13 @@ function on_key(key, rep)
   elseif scene == "secrets" then
     if key == "back" or key == "select" then show_title() end
     return true
+  elseif scene == "author" then
+    if key == "back" or key == "select" then show_settings() end
+    return true
   elseif scene == "settings" then
     if key == "back" then show_title()
-    elseif key == "up" then set_sel = (set_sel - 2) % 3 + 1 settings_draw()
-    elseif key == "down" then set_sel = set_sel % 3 + 1 settings_draw()
+    elseif key == "up" then set_sel = (set_sel - 2) % #set_rows + 1 settings_draw()
+    elseif key == "down" then set_sel = set_sel % #set_rows + 1 settings_draw()
     elseif key == "select" then settings_select() end
     return true
   elseif scene == "over" then

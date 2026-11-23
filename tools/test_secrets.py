@@ -10,7 +10,7 @@ EXPOSE = ("__T = {G = function() return G end, run = function() return run end, 
           " play_tick = play_tick, find_secret = find_secret, idx = idx, IMG = IMG,"
           " FLOOR = FLOOR, BLOCK = BLOCK, settings = settings, scene = function() return scene end,"
           " menu = function() return menu end, menu_sel = function() return menu_sel end,"
-          " show_over = function() show_over() end}")
+          " show_over = function() show_over() end, show_settings = function() show_settings() end}")
 
 fails = 0
 
@@ -180,6 +180,19 @@ check("link to the card page", "%2Fshare%3Fs%3D4321" in url)
 check("QR text fits 256 bytes", len(url) <= 256)
 r.key("back")
 check("CANCEL: back to game over", T.scene() == "over")
+
+# 9. settings: MADE BY @HYPNOGABA opens a QR to x.com/hypnogaba
+r = Runner(1, expose=EXPOSE)
+T = r.lua.globals().__T
+cap = {}
+r.lua.globals()["ui"]["qr"] = lambda x, y, size, text: cap.setdefault("t", text) and None
+T.show_settings()
+for _ in range(3):
+    r.key("down")
+r.key("select")
+check("settings row 4: the maker's page", T.scene() == "author" and cap.get("t") == "https://x.com/hypnogaba")
+r.key("back")
+check("CANCEL: back to settings", T.scene() == "settings")
 
 print("all passed" if fails == 0 else f"{fails} FAILED", fails)
 sys.exit(1 if fails else 0)
