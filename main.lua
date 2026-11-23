@@ -98,13 +98,22 @@ local function load_world(w)
       IMG[name] = ui.load(rows, {palette = pal})
     end
   end
+  if loaded_world == 0 then
+    -- GOLD VAL (all five secrets): the hero sprites in gold
+    local gold = palette_for(w)
+    gold.p, gold.P, gold.v, gold.a = 0xFFD84A, 0xC98A1E, 0xFFF3B0, 0xFFF3B0
+    for _, f in ipairs({"d0", "d1", "d2", "u0", "u1", "u2", "l0", "l1", "l2", "r0", "r1", "r2",
+        "x1", "x2", "x3", "x4"}) do
+      IMG["gold_" .. f] = ui.load(A.s["hero_" .. f], {palette = gold})
+    end
+  end
   loaded_world = w
 end
 
 -- ------------------------------------------------------------------ LEDs
 -- ------------------------------------------------------------------ settings
 local settings = {leds = true, name = true, skin = "hero"}
-local SKINS = {hero = "VAL", toly = "TOLY", mert = "MERT"}
+local SKINS = {hero = "VAL", toly = "TOLY", mert = "MERT", gold = "GOLD VAL"}
 do
   local st = storage.get("settings")
   if type(st) == "table" then
@@ -197,16 +206,101 @@ local function award(key, amount, reason)
       return
     end
     if not ok then return end      -- offline or busy: ask again next time
-    lamp_session[skey] = true      -- paid, or the daily cap is used up
-    if type(r) == "table" and (r.awarded or 0) > 0 then
-      ui.toast("+" .. r.awarded .. " !LAMP" .. (r.awarded > 1 and "s" or "") .. "  " .. reason)
-    end
+    lamp_session[skey] = true      -- paid, or the daily cap is used up: not again this session
+    local got = type(r) == "table" and (tonumber(r.awarded) or 0) or 0
+    if got <= 0 then return end    -- capped: a later launch today may still be paid
+    ui.toast("+" .. got .. " !LAMP" .. (got > 1 and "s" or "") .. "  " .. reason)
     local now = lamp_log()
     if now and now.day == day then -- an answer after midnight does not use up the new day
       now.got[key] = true
       storage.set("lamps", now)
     end
   end)
+end
+
+-- ------------------------------------------------------------------ secrets
+-- Five secrets, listed with hints under SECRETS on the title. Each one found pays
+-- 1 !LAMP once ever; all five pay 3 more and unlock the GOLD VAL skin.
+local SECRETS = {
+  {id = "ibrl", name = "IBRL MODE", hint = "Title: the oldest cheat code in games.",
+    how = "UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT"},
+  {id = "skin", name = "TRIBUTE SKINS", hint = "Title: wiggle twice, then look up twice.",
+    how = "LEFT RIGHT LEFT RIGHT UP UP"},
+  {id = "gm", name = "GM", hint = "Title: nod twice, then shake your head.",
+    how = "UP DOWN UP DOWN LEFT RIGHT"},
+  {id = "poh", name = "PROOF OF HISTORY", hint = "Some stages want you fast. Very fast.",
+    how = "clear a stage in under 60 s: +1500"},
+  {id = "wagmi", name = "WAGMI", hint = "Every stage is a picture. Erase it.",
+    how = "break every block of the picture: +2000"},
+}
+local LAMP_SECRET, LAMP_ALL_SECRETS = 1, 3
+local found = {}
+local paid = {}
+do
+  local s = storage.get("secrets")
+  if type(s) == "table" then
+    for _, it in ipairs(SECRETS) do if s[it.id] == true then found[it.id] = true end end
+  end
+  local p = storage.get("spaid")
+  if type(p) == "table" then
+    for k, v in pairs(p) do if v == true and type(k) == "string" then paid[k] = true end end
+  end
+end
+local secret_tried = {}            -- asked this session already (a capped day retries next launch)
+
+local function secrets_count()
+  local n = 0
+  for _, it in ipairs(SECRETS) do if found[it.id] then n = n + 1 end end
+  return n
+end
+
+local function all_secrets() return secrets_count() == #SECRETS end
+
+-- !LAMPs for a secret, once ever: kept unpaid until the server actually pays
+local function pay_secret(key, amount, reason)
+  if paid[key] or secret_tried[key] or not lamps or not lamps.award or needs_x then return end
+  secret_tried[key] = true
+  lamps.award(amount, reason, function(ok, r)
+    if ok and type(r) == "table" and r.needsX then
+      needs_x = true
+      ui.toast("Link X in My Badge to earn !LAMPs")
+      return
+    end
+    if not ok then secret_tried[key] = nil return end   -- offline: ask again later
+    if type(r) == "table" and (r.awarded or 0) > 0 then
+      paid[key] = true
+      storage.set("spaid", paid)
+      ui.toast("+" .. r.awarded .. " !LAMP" .. (tonumber(r.awarded) > 1 and "s" or "") .. "  " .. reason)
+    end
+  end)
+end
+
+-- secrets found earlier whose !LAMPs did not come through yet
+local function pay_secrets_due()
+  for _, it in ipairs(SECRETS) do
+    if found[it.id] then pay_secret(it.id, LAMP_SECRET, "secret: " .. it.name) end
+  end
+  if all_secrets() then pay_secret("all", LAMP_ALL_SECRETS, "all secrets found") end
+end
+
+-- Marks a secret found. Returns a prefix for the caller's toast ("" if it was known).
+local function find_secret(id)
+  if found[id] then return "" end
+  found[id] = true
+  storage.set("secrets", found)
+  local name = id
+  for _, it in ipairs(SECRETS) do if it.id == id then name = it.name end end
+  pay_secret(id, LAMP_SECRET, "secret: " .. name)
+  local n = secrets_count()
+  if n == #SECRETS then
+    pay_secret("all", LAMP_ALL_SECRETS, "all secrets found")
+    settings.skin = "gold"           -- wear the prize right away (the skin code cycles it)
+    save_settings()
+    flash(0xFFD84A, 1.0)
+    return "ALL 5 SECRETS! GOLD VAL unlocked. "
+  end
+  flash(0xFF6FB5, 0.4)
+  return "SECRET " .. n .. "/" .. #SECRETS .. "! "
 end
 
 -- ------------------------------------------------------------------ leaderboard
@@ -983,7 +1077,7 @@ local function update_bombs(dt)
         if G.pic_left == 0 then
           -- WAGMI: the whole picture is gone
           run.score = run.score + 2000
-          ui.toast("WAGMI! Picture cleared +2000")
+          ui.toast(find_secret("wagmi") .. "WAGMI! Picture cleared +2000")
           flash(0x14F195, 0.6)
         end
       end
@@ -1065,6 +1159,7 @@ end
 
 -- ------------------------------------------------------------------ stage lifecycle
 local start_stage, show_title, show_help, show_over, show_win, show_lb, show_settings
+local show_secrets, secrets_label, menu_draw
 
 local function free_stage()
   clear_popups()
@@ -1163,6 +1258,8 @@ local function stage_cleared()
     -- PROOF OF HISTORY: a stage cleared in under a minute
     run.score = run.score + 1500
     center_label(52, "PROOF OF HISTORY +1500", 14, "yellow")
+    local pre = find_secret("poh")
+    if pre ~= "" then ui.toast(pre .. "PROOF OF HISTORY") end
   end
   award("s" .. run.stage, LAMP_STAGE, "stage " .. run.stage .. " cleared")
 end
@@ -1270,8 +1367,15 @@ local function play_tick(dt)
   end
   if alive == 0 and not G.open then
     G.open = true
+    if G.grid[G.gate] == BLOCK then
+      -- still hidden under its fork: crack the fork so the player can see where to go
+      if not G.breaking[G.gate] then G.breaking[G.gate] = BREAK_T end
+      ui.toast("All clear: the Finality gate breaks out of its fork")
+    else
+      ui.toast("All clear: the Finality gate is open")
+    end
+    flash(0x14F195, 0.4)
     touch(G.gate)
-    ui.toast("All clear: the Finality gate is open")
   end
   if G.gate_cool > 0 then G.gate_cool = G.gate_cool - dt end
   if G.spawn_at_gate > 0 and not G.flames[G.gate] then
@@ -1313,7 +1417,18 @@ local menu = {}
 local menu_sel = 1
 local title_anim = {}
 
-local function menu_draw()
+-- the SECRETS item shows how many are found
+function secrets_label()
+  for _, item in ipairs(menu) do
+    if item.id == "secrets" then
+      local n = secrets_count()
+      item.text = n == #SECRETS and "SECRETS 5/5 GOLD" or ("SECRETS " .. n .. "/" .. #SECRETS)
+    end
+  end
+  menu_draw()
+end
+
+function menu_draw()
   for n, item in ipairs(menu) do
     local on = n == menu_sel
     item.l:text((on and "> " or "  ") .. item.text .. (on and " <" or "  "))
@@ -1353,16 +1468,19 @@ function show_title()
   end
   items[#items + 1] = {id = "lb", text = "LEADERBOARD"}
   items[#items + 1] = {id = "help", text = "HOW TO PLAY"}
+  items[#items + 1] = {id = "secrets", text = "SECRETS"}
   items[#items + 1] = {id = "settings", text = "SETTINGS"}
+  local step = #items > 5 and 15 or 19
   for n, it in ipairs(items) do
-    it.l = ui.label(0, 88 + (n - 1) * 19, "", {size = 14, w = ui.W, align = "center"})
+    it.l = ui.label(0, 86 + (n - 1) * step, "", {size = 14, w = ui.W, align = "center"})
     menu[n] = it
   end
   menu_sel = 1
-  menu_draw()
+  secrets_label()
   ui.label(0, 180, "BEST " .. save.best, {size = 12, color = "yellow", w = ui.W, align = "center"})
   ui.hint("UP/DOWN choose   SELECT open   CANCEL exit")
   flush_pending()
+  pay_secrets_due()
 end
 
 local function title_tick(dt)
@@ -1427,7 +1545,7 @@ function show_help()
       text(x + 36, y + 16, f[3], "dim")
     end
     ui.image(8, 150, IMG.gate1, {scale = 2})
-    text(44, 152, "Gate hides under a fork.")
+    text(44, 152, "Under a fork; all foes gone: it pops out.")
     text(44, 166, "Die: special powers are lost.", "dim")
     ui.label(0, 186, "D-pad move  SELECT bomb  CANCEL pause", {size = 12, color = "green", w = ui.W, align = "center"})
   elseif help_page == 2 then
@@ -1454,9 +1572,25 @@ function show_help()
     text(8, 144, "game, with your X handle or 'anon'")
     text(8, 158, "(change it in SETTINGS).")
     text(8, 176, "Needs Wi-Fi. Sent later if offline.", "dim")
-    text(8, 190, "psst: the title screen keeps secrets", "pink")
+    text(8, 190, "psst: SECRETS on the title has hints", "pink")
   end
   ui.hint("LEFT/RIGHT page   CANCEL back")
+end
+
+-- secrets screen: found ones say how, the rest give a hint
+function show_secrets()
+  scene = "secrets"
+  screen("SECRETS " .. secrets_count() .. "/" .. #SECRETS)
+  for n, it in ipairs(SECRETS) do
+    local y = 32 + (n - 1) * 29
+    local got = found[it.id]
+    ui.label(8, y, (got and "+ " or "? ") .. it.name, {size = 12, color = got and "green" or "yellow"})
+    ui.label(20, y + 13, got and it.how or it.hint, {size = 12, color = got and "dim" or "text"})
+  end
+  local foot = all_secrets() and "GOLD VAL is yours: wear it with the skin code"
+    or "Each: +1 !LAMP once. All 5: GOLD VAL + 3 !LAMPs"
+  ui.label(0, 182, foot, {size = 12, color = all_secrets() and "yellow" or "pink", w = ui.W, align = "center"})
+  ui.hint("CANCEL back")
 end
 
 -- leaderboard screen
@@ -1598,21 +1732,27 @@ local function check_codes(key)
   for name, code in pairs(CODES) do
     if s:sub(-#code) == code then
       typed = {}
+      local pre = find_secret(name)
       if name == "ibrl" then
         ibrl = not ibrl
-        ui.toast(ibrl and "IBRL MODE ON: increase bandwidth, reduce latency" or "IBRL MODE OFF")
+        local on = pre ~= "" and "IBRL MODE ON" or "IBRL MODE ON: increase bandwidth, reduce latency"
+        ui.toast(pre .. (ibrl and on or "IBRL MODE OFF"))
       elseif name == "skin" then
         local order = {"hero", "toly", "mert"}
-        local n = 1
+        if all_secrets() then order[#order + 1] = "gold" end
+        local n = 0
         for k, v in ipairs(order) do if v == settings.skin then n = k end end
-        settings.skin = order[n % #order + 1]
+        -- a fresh find of the 5th secret already put on GOLD VAL: keep it on
+        if pre == "" or settings.skin ~= "gold" then settings.skin = order[n % #order + 1] end
         save_settings()
-        title_anim.hero:set(IMG[settings.skin .. "_r0"])
-        ui.toast("Hero: " .. SKINS[settings.skin] .. (settings.skin ~= "hero" and " (tribute skin)" or ""))
+        local note = settings.skin == "gold" and " (all secrets)" or settings.skin ~= "hero" and " (tribute skin)" or ""
+        ui.toast(pre .. "Hero: " .. SKINS[settings.skin] .. note)
       else
-        ui.toast("gm gm. WAGMI")
+        ui.toast(pre .. "gm gm. WAGMI")
         title_anim.gm = 1.2
       end
+      title_anim.hero:set(IMG[settings.skin .. "_r0"])
+      if pre ~= "" then secrets_label() end
       return
     end
   end
@@ -1630,6 +1770,7 @@ function on_key(key, rep)
       elseif id == "cont" then new_run(save.stage, save.epoch)
       elseif id == "lb" then show_lb()
       elseif id == "settings" then show_settings()
+      elseif id == "secrets" then show_secrets()
       else help_page = 1 show_help() end
     end
     return true
@@ -1640,6 +1781,9 @@ function on_key(key, rep)
     return true
   elseif scene == "lb" then
     if key == "back" then show_title() elseif key == "select" then lb_fetch() end
+    return true
+  elseif scene == "secrets" then
+    if key == "back" or key == "select" then show_title() end
     return true
   elseif scene == "settings" then
     if key == "back" then show_title()

@@ -52,6 +52,14 @@ Controls: D-pad move, SELECT bomb (hold it with REMOTE), CANCEL pause (CANCEL ag
 Menu: NEW GAME, CONTINUE, LEADERBOARD, HOW TO PLAY (3 pages), SETTINGS (LEDs, name on the
 board, reset progress).
 
+## 1.1.0 (23 Nov 2026)
+- The Finality gate breaks out of its fork when the last foe dies (before, a gate still under a
+  fork stayed hidden, so the stage looked stuck).
+- SECRETS on the title: hints for the 5 secrets (IBRL MODE, TRIBUTE SKINS, GM, PROOF OF HISTORY,
+  WAGMI), the how once found. Each pays 1 !LAMP once ever; all five pay 3 more and unlock GOLD VAL
+  (gold hero, in the skin cycle). Daily awards are marked paid only when the server pays.
+- Tests: tools/test_secrets.py (gate on all 8 stages, finds, payouts, capped day, X not linked).
+
 ## Leaderboard
 
 `server/` is a Cloudflare Worker with a D1 table, live at https://forkbomb-scores.hypnogaba.workers.dev.

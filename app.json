@@ -1,9 +1,9 @@
 {
   "id": "forkbomb",
-  "name": "FORK BOMB",
-  "version": "1.0.0",
+  "name": "Fork BOMB",
+  "version": "1.1.0",
   "author": "@hypnogaba",
-  "summary": "Bomb-maze arcade on Solana: blast forks shaped like the Solana logo, dodge rugs, jeets and MEV bots, 12 power-ups, global leaderboard, daily !LAMPs.",
+  "summary": "Bomb-maze arcade on Solana: blast forks, dodge rugs and MEV bots, find 5 secrets, win !LAMPs.",
   "icon": "star",
   "accent": "9945FF",
   "category": "games",
