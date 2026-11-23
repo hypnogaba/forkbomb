@@ -9,7 +9,8 @@ from sim import Runner
 EXPOSE = ("__T = {G = function() return G end, run = function() return run end, new_run = new_run,"
           " play_tick = play_tick, find_secret = find_secret, idx = idx, IMG = IMG,"
           " FLOOR = FLOOR, BLOCK = BLOCK, settings = settings, scene = function() return scene end,"
-          " menu = function() return menu end, menu_sel = function() return menu_sel end}")
+          " menu = function() return menu end, menu_sel = function() return menu_sel end,"
+          " show_over = function() show_over() end}")
 
 fails = 0
 
@@ -160,6 +161,25 @@ keys(r, "up down up down left right")
 keys(r, "up up down down left right left right")
 check("needsX: asked once", asks["n"] == 1)
 check("needsX: says link X", len(toasts(r, "Link X")) == 1)
+
+# 8. share on X from the game-over screen: a QR to an X post that links the picture card
+from urllib.parse import unquote_plus
+r = Runner(1, expose=EXPOSE)
+T = r.lua.globals().__T
+T.new_run(2, 1)
+T.run().score = 4321
+cap = {}
+r.lua.globals()["ui"]["qr"] = lambda x, y, size, text: cap.setdefault("t", text) and None
+T.show_over()
+r.key("up")
+check("UP on game over: share screen", T.scene() == "share")
+url = cap.get("t", "")
+txt = unquote_plus(url.split("text=", 1)[1].split("&url=")[0]) if "text=" in url else ""
+check("X post with the score and the stage", url.startswith("https://x.com/intent/post?text=") and "4321" in txt and "stage 1-2" in txt)
+check("link to the card page", "%2Fshare%3Fs%3D4321" in url)
+check("QR text fits 256 bytes", len(url) <= 256)
+r.key("back")
+check("CANCEL: back to game over", T.scene() == "over")
 
 print("all passed" if fails == 0 else f"{fails} FAILED", fails)
 sys.exit(1 if fails else 0)

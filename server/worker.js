@@ -2,9 +2,13 @@
 // Every request must come through the badge server, which signs it (X-Badge-* headers).
 //   POST /score  {score, stage, epoch, name}  -> keeps the player's best
 //   GET  /top?n=10                            -> {top: [{r, n, s, st}], me: {r, s} | null}
+//   GET  /share?s=..   (public) a page for X with a picture card; GET /card.png (public) the picture
 // See https://solana.com/breakpoint/badge/apps/docs (http: "What your server receives").
 
+import { CARD_B64 } from './card.js';
+
 export const APP = 'forkbomb';
+const CARD = Uint8Array.from(atob(CARD_B64), (c) => c.charCodeAt(0));
 const SERVER = 'https://badge-api.solana.com';
 const MAX_SCORE = 5_000_000;
 
@@ -72,6 +76,21 @@ const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+    // Public: the X crawler reads these, not a badge.
+    if (req.method === 'GET' && url.pathname === '/card.png') {
+      return new Response(CARD, { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' } });
+    }
+    if (req.method === 'GET' && url.pathname === '/share') {
+      const score = Math.max(0, Math.min(MAX_SCORE, Math.floor(Number(url.searchParams.get('s')) || 0)));
+      const title = `FORK BOMB: ${score} on the Solana Breakpoint badge`;
+      const img = `${url.origin}/card.png`;
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+<meta name="twitter:card" content="summary_large_image"><meta property="og:title" content="${title}">
+<meta property="og:description" content="Bomb-maze arcade on Solana: blast forks, dodge rugs and MEV bots."><meta property="og:image" content="${img}">
+<meta name="twitter:image" content="${img}"><meta http-equiv="refresh" content="0; url=https://solana.com/breakpoint">
+</head><body><a href="https://solana.com/breakpoint">solana.com/breakpoint</a></body></html>`;
+      return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
+    }
     const body = req.method === 'GET' || req.method === 'HEAD' ? '' : await req.text();
     const who = await fromBadge(req, body);
     if (!who) return json({ error: 'not from a badge' }, 401);

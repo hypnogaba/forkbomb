@@ -222,15 +222,15 @@ end
 -- Five secrets, listed with hints under SECRETS on the title. Each one found pays
 -- 1 !LAMP once ever; all five pay 3 more and unlock the GOLD VAL skin.
 local SECRETS = {
-  {id = "ibrl", name = "IBRL MODE", hint = "Title: the oldest cheat code in games.",
+  {id = "ibrl", name = "IBRL MODE", hint = "Start menu: up up down down, then...",
     how = "UP UP DOWN DOWN LEFT RIGHT LEFT RIGHT"},
-  {id = "skin", name = "TRIBUTE SKINS", hint = "Title: wiggle twice, then look up twice.",
+  {id = "skin", name = "TRIBUTE SKINS", hint = "Start menu: left right left right, then...",
     how = "LEFT RIGHT LEFT RIGHT UP UP"},
-  {id = "gm", name = "GM", hint = "Title: nod twice, then shake your head.",
+  {id = "gm", name = "GM", hint = "Start menu: up down up down, then...",
     how = "UP DOWN UP DOWN LEFT RIGHT"},
-  {id = "poh", name = "PROOF OF HISTORY", hint = "Some stages want you fast. Very fast.",
+  {id = "poh", name = "PROOF OF HISTORY", hint = "In a stage: clear it in under 60 seconds.",
     how = "clear a stage in under 60 s: +1500"},
-  {id = "wagmi", name = "WAGMI", hint = "Every stage is a picture. Erase it.",
+  {id = "wagmi", name = "WAGMI", hint = "In a stage: blocks draw a picture. Erase it.",
     how = "break every block of the picture: +2000"},
 }
 local LAMP_SECRET, LAMP_ALL_SECRETS = 1, 3
@@ -1641,7 +1641,7 @@ function show_lb()
   end
   lb.status = ui.label(0, 100, "", {size = 14, color = "dim", w = ui.W, align = "center"})
   lb.me = ui.label(0, 190, "", {size = 12, color = "green", w = ui.W, align = "center"})
-  ui.hint("SELECT refresh   CANCEL back")
+  ui.hint("SELECT refresh   UP share on X   CANCEL back")
   lb_fetch()
 end
 
@@ -1705,15 +1705,44 @@ local function end_card(title, color, line1, line2)
   ui.hint("SELECT continue")
 end
 
+-- share on X: a QR the phone scans; X opens with the post, its link shows a picture card
+local share_back
+local function show_share(score, stage, back)
+  share_back = back
+  scene = "share"
+  ui.clear()
+  ui.bg(0x0B0B14)
+  local function enc(t)
+    return (t:gsub("[^%w%-%._~]", function(c) return c == " " and "+" or string.format("%%%02X", string.byte(c)) end))
+  end
+  local text = "I scored " .. score .. " in FORK BOMB on my Solana Breakpoint badge"
+    .. (stage and (", stage " .. stage) or "") .. ". @SolanaFndn"
+  local url = "https://x.com/intent/post?text=" .. enc(text) .. "&url=" .. enc(LB .. "/share?s=" .. score)
+  ui.label(8, 10, "SHARE", {size = 20, color = "text"})
+  ui.label(8, 40, "Scan with your", {size = 12, color = "dim"})
+  ui.label(8, 54, "phone: X opens", {size = 12, color = "dim"})
+  ui.label(8, 68, "with the post", {size = 12, color = "dim"})
+  ui.label(8, 82, "and a picture.", {size = 12, color = "dim"})
+  ui.label(8, 110, tostring(score), {size = 20, color = "yellow"})
+  if stage then ui.label(8, 136, "stage " .. stage, {size = 12, color = "dim"}) end
+  if not (ui.qr and pcall(ui.qr, 112, 6, 204, url)) then
+    ui.label(112, 90, "Update Solana OS", {size = 14, color = "pink"})
+    ui.label(112, 110, "to show the QR", {size = 14, color = "pink"})
+  end
+  ui.hint("SELECT or CANCEL back")
+end
+
 function show_over()
   scene = "over"
   end_card("REKT", "pink", "score " .. run.score, "the chain moves on without you")
+  ui.hint("SELECT continue   UP share on X")
   if has_led then for n = 1, 8 do led_put(n, 0x500A0A) end end
 end
 
 function show_win()
   scene = "win"
   end_card("FINALITY!", "green", "score " .. run.score, "epoch " .. run.epoch .. " begins: foes are faster")
+  ui.hint("SELECT next stage   UP share on X")
   if has_led then for n = 1, 8 do led_put(n, 0x14F195) end end
 end
 
@@ -1780,7 +1809,11 @@ function on_key(key, rep)
     elseif key == "left" then help_page = (help_page - 2) % HELP_PAGES + 1 show_help() end
     return true
   elseif scene == "lb" then
-    if key == "back" then show_title() elseif key == "select" then lb_fetch() end
+    if key == "back" then show_title() elseif key == "select" then lb_fetch()
+    elseif key == "up" then show_share(save.best, nil, show_lb) end
+    return true
+  elseif scene == "share" then
+    if key == "back" or key == "select" then (share_back or show_title)() end
     return true
   elseif scene == "secrets" then
     if key == "back" or key == "select" then show_title() end
@@ -1792,10 +1825,12 @@ function on_key(key, rep)
     elseif key == "select" then settings_select() end
     return true
   elseif scene == "over" then
-    if key == "select" or key == "back" then show_title() end
+    if key == "up" then show_share(run.score, run.epoch .. "-" .. run.stage, show_over)
+    elseif key == "select" or key == "back" then show_title() end
     return true
   elseif scene == "win" then
-    if key == "select" then start_stage() elseif key == "back" then show_title() end
+    if key == "up" then show_share(run.score, run.epoch .. "-" .. run.stage, show_win)
+    elseif key == "select" then start_stage() elseif key == "back" then show_title() end
     return true
   elseif scene == "play" then
     if paused then

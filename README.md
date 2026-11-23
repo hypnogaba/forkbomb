@@ -52,6 +52,12 @@ Controls: D-pad move, SELECT bomb (hold it with REMOTE), CANCEL pause (CANCEL ag
 Menu: NEW GAME, CONTINUE, LEADERBOARD, HOW TO PLAY (3 pages), SETTINGS (LEDs, name on the
 board, reset progress).
 
+## 1.1.1 (23 Nov 2026)
+- Share on X: UP on game over, the stage-clear screen and the leaderboard shows a QR; X opens
+  with the post, and its link (forkbomb-scores worker, public /share) shows a picture card
+  (/card.png, made by tools/make_card.py). The worker serves both without a badge signature.
+- Secret hints say where: "Start menu: ..." with the start of the key code, or "In a stage: ...".
+
 ## 1.1.0 (23 Nov 2026)
 - The Finality gate breaks out of its fork when the last foe dies (before, a gate still under a
   fork stayed hidden, so the stage looked stuck).

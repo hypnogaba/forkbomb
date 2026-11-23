@@ -73,6 +73,14 @@ r = await call('GET', '/top', undefined, { req: 'same' });
 check('replayed request: refused', r.status === 401);
 const plain = await worker.fetch(new Request('https://x.workers.dev/top'), env);
 check('unsigned request: refused', plain.status === 401);
+const card = await worker.fetch(new Request('https://fb.test/card.png'), { DB: D1 });
+const png = new Uint8Array(await card.arrayBuffer());
+check('card.png is public and a PNG', card.status === 200 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47);
+const page = await (await worker.fetch(new Request('https://fb.test/share?s=4200<b>'), { DB: D1 })).text();
+check('share page: public, card tags, the score, nothing injected',
+  page.includes('summary_large_image') && page.includes('https://fb.test/card.png') && page.includes('FORK BOMB: 0 ') && !page.includes('<b>'));
+const page2 = await (await worker.fetch(new Request('https://fb.test/share?s=4200'), { DB: D1 })).text();
+check('share page names the score', page2.includes('FORK BOMB: 4200 '));
 r = await call('POST', '/score', { score: 99_000_000, stage: 1, epoch: 1 });
 check('absurd score: refused', r.status === 400);
 r = await call('POST', '/score', { score: 10, stage: 9, epoch: 1 });
